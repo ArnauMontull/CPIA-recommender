@@ -217,8 +217,9 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Excluir datos masivos
 *.csv
 *.zip
 *.tar.gz
 data/
-MovieLens/
+database/
