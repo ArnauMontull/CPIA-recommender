@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+*.csv
+*.zip
+*.tar.gz
+data/
+MovieLens/
