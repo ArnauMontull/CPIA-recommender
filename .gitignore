@@ -223,3 +223,14 @@ __marimo__/
 *.tar.gz
 data/
 database/
+
+# Archivos auxiliares de compilación LaTeX
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+*.bbl
+*.blg
