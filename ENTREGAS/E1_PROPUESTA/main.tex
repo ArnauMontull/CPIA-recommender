@@ -1,0 +1,348 @@
+\documentclass[a4paper,11pt]{article}
+
+% ==========================================
+% 1. CONFIGURACIÓ DE L'USUARI
+% ==========================================
+\newcommand{\titol}{Motor de Recomendación Cinematográfica de Altas Prestaciones Basado en Redes Neuronales y Metadatos}
+\newcommand{\subtitol}{Propuesta de Proyecto: Definición del Problema, Fuentes de Datos, Estado del Arte y Justificación Tecnológica}
+\newcommand{\assignatura}{Computació d'Altes Prestacions i Intel·ligència Artificial (CPIA)}
+\newcommand{\grup}{Grup de Treball}
+\newcommand{\universitat}{Universitat Politècnica de Catalunya}
+\newcommand{\escola}{ETSETB / FIB}
+\newcommand{\autorA}{Arnau Montull}
+\newcommand{\autorB}{Uriel Martínez}
+
+% ==========================================
+% 2. PAQUETS I CONFIGURACIÓ TÈCNICA
+% ==========================================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-nodecimaldot]{babel}
+\usepackage{amsmath, amssymb, amsfonts, amsthm}
+\usepackage{geometry}
+\geometry{left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm}
+\usepackage{graphicx}
+\usepackage{float}      
+\usepackage{parskip}    
+\usepackage{hyperref}   
+\usepackage{caption}
+\usepackage{subcaption} 
+\usepackage{fancyhdr}   
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\sisetup{output-decimal-marker = {.}}
+
+% --- Capçaleres ---
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small \textbf{\assignatura}}
+\rhead{\small \autorA, \autorB}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% --- PREÀMBUL PER AL CODI ---
+\usepackage{listings}
+
+\definecolor{mGreen}{rgb}{0,0.6,0}
+\definecolor{mGray}{rgb}{0.5,0.5,0.5}
+\definecolor{mPurple}{rgb}{0.58,0,0.82}
+\definecolor{background}{rgb}{0.98,0.98,0.98}
+
+\lstset{
+    language=C++,
+    backgroundcolor=\color{background},   
+    commentstyle=\color{mGreen},
+    keywordstyle=\color{blue},
+    numberstyle=\tiny\color{mGray},
+    stringstyle=\color{mPurple},
+    basicstyle=\ttfamily\scriptsize, 
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2,
+    frame=single,                    
+    rulecolor=\color{black!10}
+}
+
+% ==========================================
+% 3. INICI DEL DOCUMENT
+% ==========================================
+\begin{document}
+
+% --- PORTADA ---
+\begin{titlepage}
+    \centering
+    \vspace*{0.5cm}
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=0.18\textwidth]{Logo_UPC.svg.png} 
+    \end{figure}
+    
+    \vspace{0.4cm}
+    {\large \textbf{\universitat}}\\[0.2cm]
+    {\normalsize \escola}\\[0.8cm]
+    
+    \rule{\textwidth}{0.5pt}\\[0.5cm]
+    {\Huge \textbf{\titol}}\\[0.4cm]
+    {\Large \subtitol}\\[0.2cm]
+    \rule{\textwidth}{0.5pt}\\[0.6cm]
+    
+    {\Large \textbf{\assignatura}}\\[0.4cm]
+    {\Large \autorA}\\[0.15cm]
+    {\Large \autorB}\\[1.5cm]
+    
+    \vfill
+    
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=0.12\textwidth]{logo-enginyeria-fisica.jpg}
+    \end{figure}
+    
+    \vspace{0.3cm}
+    {\large \today}
+\end{titlepage}
+
+\clearpage
+
+% ==========================================
+% SECCIÓ 1: DEFINICIÓ DEL PROBLEMA
+% ==========================================
+\section{Definición del Problema a Resolver}
+
+En el ámbito del comercio digital y las plataformas de contenidos audiovisuales bajo demanda, los sistemas de recomendación constituyen el núcleo algorítmico responsable de mitigar la sobrecarga de información del usuario. No obstante, el diseño de un motor de recomendación a gran escala plantea retos matemáticos y computacionales críticos que las soluciones convencionales no logran resolver de manera simultánea:
+
+\begin{enumerate}
+    \item \textbf{Esparcidad extrema de datos (\textit{High Sparsity}):} En matrices de interacción usuario-ítem donde el catálogo supera las decenas de miles de obras, un usuario promedio evalúa una fracción inferior al $0.1\%$ del inventario disponible. La matriz resultante presenta una dispersión superior al $99.8\%$, lo que provoca inestabilidad numérica en métodos algebraicos clásicos.
+    \item \textbf{Sesgo de popularidad (\textit{Popularity Bias}) y falta de descubrimiento:} Los algoritmos basados exclusivamente en filtrado colaborativo sufren un sesgo endémico: tienden a concentrar sus predicciones en títulos superventas (\textit{blockbusters}) sobrerrepresentados en los datos, invisibilizando obras periféricas o de autor (\textit{long-tail}) que poseen una afinidad latente muy elevada con los gustos específicos de usuarios cinéfilos.
+    \item \textbf{El problema del arranque en frío (\textit{Cold-Start}):} La incorporación de películas recién estrenadas o de nuevos usuarios que sincronizan sus historiales externos (como perfiles procedentes de Letterboxd) colapsa los modelos colaborativos puros, los cuales requieren interacciones previas consolidadas para generar incrustaciones (\textit{embeddings}) válidas.
+    \item \textbf{Cuello de botella de escalabilidad y latencia en inferencia:} Evaluar funciones no lineales profundas sobre la totalidad de un catálogo con más de $80\,000$ títulos en tiempo real impone una carga computacional inasumible para servicios interactivos, demandando esquemas desacoplados y procesamiento paralelo de alto rendimiento.
+\end{enumerate}
+
+\subsection{Formulación Matemática}
+Dado un conjunto de usuarios $\mathcal{U}$ con cardinalidad $|\mathcal{U}| = N$ y un catálogo de películas $\mathcal{I}$ con cardinalidad $|\mathcal{I}| = M$, el espacio de interacción se estructura formalmente como una matriz dispersa $\mathbf{R} \in \mathbb{R}^{N \times M}$, donde cada elemento $r_{ui} \in [0.5, 5.0]$ representa una valoración explícita o se encuentra indefinido ($r_{ui} = \emptyset$). 
+
+El objetivo primordial del proyecto se define como un problema de \textbf{Aprendizaje de Ordenamiento (\textit{Learning to Rank}) y Recuperación Top-$K$}. En lugar de una mera regresión puntual orientada a minimizar el error absoluto sobre notas observadas, el sistema debe proyectar a cada usuario $u$ y a cada película $i$ a un espacio latente métrico compartido de dimensión $d \ll M$, produciendo una función de afinidad $\hat{s}(u, i) = f(u, i; \Theta)$ tal que:
+
+\begin{equation}
+    \hat{s}(u, i) > \hat{s}(u, j) \quad \forall \, i \in \mathcal{I}_u^+, \; j \in \mathcal{I} \setminus \mathcal{I}_u^+
+    \label{eq:ranking_obj}
+\end{equation}
+
+donde $\mathcal{I}_u^+$ representa el conjunto de películas de interés positivo para el usuario y $\mathcal{I} \setminus \mathcal{I}_u^+$ comprende el catálogo no observado o no relevante.
+
+\begin{figure}[H]
+    \centering
+    % Placeholder: Inserta aquí el diagrama general del problema / flujo de recomendación
+    \includegraphics[width=0.95\textwidth]{diagrama_problema_M.png}
+    \caption{Esquema conceptual del problema de recomendación: desde la matriz dispersa masiva y los metadatos heterogéneos hasta la recuperación Top-$K$ desacoplada.}
+    \label{fig:diagrama_problema}
+\end{figure}
+
+% ==========================================
+% SECCIÓ 2: IDENTIFICACIÓ DE LES FONTS DE DADES
+% ==========================================
+\section{Identificación y Caracterización de las Fuentes de Datos}
+
+Para alimentar el núcleo colaborativo y proporcionar el contexto semántico necesario para mitigar el arranque en frío y el sesgo de popularidad, el proyecto integra y fusiona tres fuentes de datos complementarias (Tabla \ref{tab:resumen_datasets}):
+
+\begin{table}[H]
+    \centering
+    \caption{Especificaciones cuantitativas de las fuentes de datos integradas en el proyecto.}
+    \label{tab:resumen_datasets}
+    \begin{tabular}{lcccc}
+        \toprule
+        \textbf{Conjunto de Datos} & \textbf{Usuarios ($N$)} & \textbf{Ítems ($M$)} & \textbf{Interacciones} & \textbf{Nivel de Dispersión (\%)} \\ \midrule
+        \textbf{MovieLens 32M} & $200\,948$ & $87\,585$ & $32\,000\,204$ & $99.818\%$ \\
+        \textbf{The Movies Dataset (TMDB)} & --- & $45\,466$ & Metadatos crudos & --- \\
+        \textbf{Letterboxd Diary Data} & Perfiles reales & $\sim 940\,000$ & Secuencias temporales & Dependiente del usuario \\ \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{MovieLens 32M (GroupLens Research)}
+Constituye el núcleo cuantitativo masivo para el entrenamiento del sistema. Es la versión oficial más exhaustiva publicada por GroupLens, registrando interacciones recogidas de forma continua hasta octubre de 2023.
+\begin{itemize}
+    \item \textbf{\texttt{ratings.csv}} ($\approx 700$ MB): Provee tuplas estructuradas $(\text{userId}, \text{movieId}, \text{rating}, \text{timestamp})$. Los ratings cubren una escala ordinal de 10 niveles discretos con incrementos de 0.5 estrellas.
+    \item \textbf{\texttt{links.csv}}: Contiene la correspondencia unívoca entre el identificador nativo de MovieLens (\texttt{movieId}), el código de IMDb (\texttt{imdbId}) y el código de The Movie Database (\texttt{tmdbId}), actuando como la pasarela relacional indispensable para la fusión de datos.
+\end{itemize}
+
+\subsection{The Movies Dataset \& TMDB Metadata}
+Aporta la base semántica y descriptiva necesaria para enriquecer los títulos evaluados. Proporciona:
+\begin{itemize}
+    \item \textbf{Cuerpo técnico y reparto (\texttt{credits.csv}):} Información de directores, guionistas, directores de fotografía y reparto principal en formato JSON serializado.
+    \item \textbf{Descriptores temáticos (\texttt{keywords.csv}):} Etiquetas argumentales normalizadas.
+    \item \textbf{Ficha técnica (\texttt{movies\_metadata.csv}):} Sinopsis argumentales completas (\textit{overview}), presupuestos, recaudaciones, fecha de lanzamiento y países de producción.
+\end{itemize}
+
+\subsection{Letterboxd Export Format (Validación en Entorno Real)}
+Se incorpora la estructura estándar de exportación de perfiles de usuario de Letterboxd (\texttt{watched.csv}, \texttt{ratings.csv}, \texttt{diary.csv}). Esta fuente permite simular la entrada de un usuario externo real en la aplicación, evaluando la robustez de la inferencia en tiempo real cuando se enfrenta a secuencias cronológicas personales y películas no vistas previamente en el entrenamiento.
+
+\begin{figure}[H]
+    \centering
+    % Placeholder: Inserta aquí el gráfico de distribución de ratings / long-tail
+    \includegraphics[width=0.7\textwidth]{distribucion_ratings.png}
+    \caption{Distribución de frecuencias de interacciones evidenciando la cola pesada (\textit{long-tail}) y el desbalance extremo entre títulos comerciales y cine periférico.}
+    \label{fig:distribucion_ratings}
+\end{figure}
+
+% ==========================================
+% SECCIÓ 3: ESTAT DE L'ART I SOLUCIONS PRÈVIES
+% ==========================================
+\section{Estado del Arte y Soluciones Previas}
+
+El estudio de la literatura científica y de arquitecturas industriales revela una amplia diversidad de metodologías, cada una sujeta a compromisos técnicos de memoria, latencia y expresividad:
+
+\subsection{Factorización Matricial Clásica (SVD / ALS)}
+Propuesta formalmente durante el \textit{Netflix Prize}, descompone la matriz $\mathbf{R} \approx \mathbf{P}\mathbf{Q}^\top$ mediante aproximaciones de bajo rango optimizadas con Mínimos Cuadrados Alternados (\textit{Alternating Least Squares}, ALS). Aunque es computable de forma multihilo, es una técnica estrictamente lineal incapaz de modelar interacciones cruzadas no lineales o incorporar metadatos textuales densos, fracasando ante el arranque en frío.
+
+\subsection{Autoencoders Lineales y Variacionales (EASE$^R$ y Multi-VAE)}
+\begin{itemize}
+    \item \textbf{EASE$^R$ (Steck, 2019):} Aprende una matriz analítica cerrada de pesos ítem-ítem $\mathbf{B} \in \mathbb{R}^{M \times M}$ con diagonal nula $\text{diag}(\mathbf{B}) = 0$. Su solución analítica $\mathbf{B} = \mathbf{I} - \mathbf{P}[\text{diagMat}(\text{diag}(\mathbf{P}))]^{-1}$ exige calcular la inversa de la matriz de Gram $\mathbf{G} = \mathbf{X}^\top\mathbf{X} + \lambda \mathbf{I}$. Esto requiere una complejidad temporal de $\mathcal{O}(M^3)$ y un consumo en memoria de $\mathcal{O}(M^2)$. Para $M \approx 87\,000$, la matriz de Gram demanda más de 30 GB de memoria RAM para su almacenamiento e inversión, resultando inviable en hardware convencional e incapaz de gestionar ítems nuevos.
+    \item \textbf{Multi-VAE (Liang et al., 2018):} Introduce un autoencoder variacional bayesiano con verosimilitud condicional multinomial. Destaca en ranking, pero el cálculo de la capa de normalización softmax sobre la totalidad del catálogo $M$ penaliza severamente el tiempo de paso hacia adelante sin aceleración gráfica dedicada.
+\end{itemize}
+
+\subsection{Factorización Neuronal Colaborativa (NCF / NeuMF)}
+NeuMF (He et al., 2017) fusiona un producto de Hadamard lineal (GMF) con un perceptrón multicapa (MLP) alimentados por incrustaciones latentes:
+
+\begin{equation}
+    \hat{y}_{ui} = \sigma \left( \mathbf{h}^\top \left[ (\mathbf{p}_u^G \odot \mathbf{q}_i^G) \,\|\, a_L(\mathbf{W}_L^\top(\dots a_1(\mathbf{W}_1^\top [\mathbf{p}_u^M \,\|\, \mathbf{q}_i^M] + \mathbf{b}_1)\dots) + \mathbf{b}_L) \right] \right)
+    \label{eq:neumf}
+\end{equation}
+
+Si bien captura relaciones de atributos no lineales, introduce un cuello de botella fatal en producción: las capas densas acopladas del MLP impiden factorizar el cálculo en un producto punto vectorial independiente. Recomendar para un usuario exige evaluar la red completa contra cada una de las $M$ películas, incurriendo en un coste temporal $\mathcal{O}(M \cdot C_{\text{MLP}})$ prohibitivo para tiempo real.
+
+\subsection{Redes Neuronales sobre Grafos (GNN: LightGCN)}
+Modelan las interacciones como un grafo bipartito y propagan mensajes mediante difusión simétrica sobre la matriz de adyacencia $\tilde{\mathbf{A}} = \mathbf{D}^{-\frac{1}{2}}\mathbf{A}\mathbf{D}^{-\frac{1}{2}}$. Presenta el estado del arte en exploración topológica, pero el almacenamiento de la matriz dispersa y la agregación de vecindarios de orden superior imponen una sobrecarga de memoria y sincronización de hilos excesiva en entornos limitados a CPU.
+
+\begin{table}[H]
+    \centering
+    \caption{Comparativa técnica de paradigmas de recomendación frente a los requisitos del proyecto.}
+    \label{tab:comparativa_modelos}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lccccc}
+        \toprule
+        \textbf{Paradigma} & \textbf{Complejidad Inferencia} & \textbf{Memoria en RAM} & \textbf{Mitigación Cold-Start} & \textbf{Fusión Metadatos} & \textbf{Idoneidad CPU/OpenMP} \\ \midrule
+        \textbf{SVD / ALS} & $\mathcal{O}(M \cdot d)$ & $\mathcal{O}((N+M)d)$ & Nula & Compleja & Alta (BLAS multihilo) \\
+        \textbf{EASE$^R$} & $\mathcal{O}(|I_u|M)$ & $\mathcal{O}(M^2)$ (Crítico) & Nula & Incompatible nativo & Media ($\mathcal{O}(M^3)$ en inversión) \\
+        \textbf{NeuMF} & $\mathcal{O}(M \cdot C_{\text{MLP}})$ (Lento) & $\mathcal{O}((N+M)d)$ & Media & Nativa & Baja (Evaluación profunda) \\
+        \textbf{LightGCN} & $\mathcal{O}(d \log M)$ (ANN) & $\mathcal{O}((N+M)d + |\tilde{\mathbf{A}}|)$ & Baja & Requiere grafo heterogéneo & Media (Intensivo en punteros) \\
+        \textbf{Two-Tower (Propuesta)} & $\mathcal{O}(d \log M)$ (ANN) & $\mathcal{O}((N+M)d)$ & \textbf{Excelente} & \textbf{Nativa y flexible} & \textbf{Sobresaliente (SIMD/HPC)} \\ \bottomrule
+    \end{tabular}%
+    }
+\end{table}
+
+% ==========================================
+% SECCIÓ 4: JUSTIFICACIÓ TECNOLÒGICA I ARQUITECTURA
+% ==========================================
+\section{Justificación Tecnológica y Arquitectura Propuesta}
+
+Para satisfacer las restricciones computacionales de la asignatura (ejecución eficiente sobre procesadores multinúcleo comerciales, diseño modular y paralelismo explícito con C/OpenMP), se propone una **arquitectura híbrida desacoplada en dos etapas** (Figura \ref{fig:arquitectura_two_tower}):
+
+\begin{figure}[H]
+    \centering
+    % Placeholder: Inserta aquí el diagrama de dos etapas (Two-Tower + Re-ranking MMR)
+    \includegraphics[width=0.85\textwidth]{arquitectura_two_tower.png}
+    \caption{Arquitectura híbrida del recomendador: etapa 1 de recuperación Two-Tower con indexación ANN vectorial, y etapa 2 de reordenamiento con MMR y penalización de popularidad.}
+    \label{fig:arquitectura_two_tower}
+\end{figure}
+
+\subsection{Etapa 1: Recuperación de Candidatos con Red de Dos Torres (\textit{Two-Tower})}
+La red desacopla totalmente la representación del usuario y de la película en dos transformaciones vectoriales que convergen en un producto escalar en un espacio métrico de dimensión $d = 128$:
+
+\begin{equation}
+    \hat{s}(u, i) = \langle \mathbf{u}, \mathbf{v}_i \rangle = \Psi_U(\mathbf{x}_u; \Theta_U)^\top \Psi_I(\mathbf{x}_i; \Theta_I)
+    \label{eq:two_tower}
+\end{equation}
+
+\begin{itemize}
+    \item \textbf{Torre de Ítem ($\Psi_I$):} Modela el contenido intrínseco proyectando representaciones Multi-Hot de directores y géneros junto a incrustaciones semánticas densas precomputadas sobre las sinopsis argumentales mediante un modelo de lenguaje compacto (\textit{SentenceTransformers all-MiniLM-L6-v2}):
+    \begin{equation}
+        \mathbf{v}_i = \mathbf{W}_{\text{cat}} \mathbf{x}_i^{\text{multi-hot}} + \mathbf{W}_{\text{text}} \mathbf{t}_i^{\text{emb}} + \mathbf{e}_i^{\text{id}}
+    \end{equation}
+    Esta formulación garantiza la resolución inmediata del arranque en frío: una película recién estrenada carente de $\mathbf{e}_i^{\text{id}}$ genera un vector $\mathbf{v}_i$ robusto a partir de sus metadatos.
+    \item \textbf{Torre de Usuario ($\Psi_U$):} Agrega dinámicamente las incrustaciones de las películas que componen el historial reciente del usuario ponderadas por la calificación asignada, proyectando el vector resultante al espacio normalizado unitario $\|\mathbf{u}\|_2 = 1$.
+\end{itemize}
+
+\subsection{Mitigación del Sesgo de Popularidad: Función de Pérdida con Corrección LogQ}
+Para neutralizar la tendencia del modelo a sobreexponer títulos comerciales durante el entrenamiento con muestras negativas dentro del lote (\textit{In-batch Negative Sampling}), se implementa la función de pérdida contrastiva InfoNCE corregida por la probabilidad marginal de popularidad del ítem $P(i)$:
+
+\begin{equation}
+    \mathcal{L}_{\text{InfoNCE}} = - \sum_{i=1}^{B} \log \frac{\exp\left( \frac{\mathbf{u}_i^\top \mathbf{v}_i - \tau \log P(i)}{\tau} \right)}{\exp\left( \frac{\mathbf{u}_i^\top \mathbf{v}_i - \tau \log P(i)}{\tau} \right) + \sum_{j \neq i}^{B} \exp\left( \frac{\mathbf{u}_i^\top \mathbf{v}_j - \tau \log P(j)}{\tau} \right)}
+    \label{eq:infonce_logq}
+\end{equation}
+
+donde $P(i) \propto n_i^{0.75}$ representa la frecuencia histórica de interacciones. La sustracción del término $\log P(i)$ elimina la ventaja artificial de las películas hiperpopulares, forzando al modelo a alinear representaciones semánticas auténticas.
+
+\subsection{Etapa 2: Re-Ranking con Relevancia Marginal Máxima (MMR)}
+La primera etapa recupera rápidamente un conjunto de $K_c = 200$ candidatos mediante búsqueda de vecinos más cercanos aproximados (\textit{ANN/HNSW}). Para balancear la afinidad predicha con la diversidad del catálogo y promover títulos de nicho, la lista final de tamaño $K = 20$ se selecciona mediante selección voraz con MMR:
+
+\begin{equation}
+    i^* = \arg\max_{i \in \mathcal{C} \setminus \mathcal{S}} \left[ \lambda \cdot \text{Score}_{\text{recup}}(u, i) - (1 - \lambda) \max_{j \in \mathcal{S}} \text{Sim}(\mathbf{v}_i, \mathbf{v}_j) \right]
+    \label{eq:mmr}
+\end{equation}
+
+fijando $\lambda \in [0.65, 0.75]$, donde $\text{Sim}(\mathbf{v}_i, \mathbf{v}_j)$ penaliza la redundancia semántica inmediata en el género o temática de las recomendaciones.
+
+% ==========================================
+% SECCIÓ 5: PLA DE COMPUTACIÓ I PARAL·LELISME
+% ==========================================
+\section{Plan de Computación Paralela y Evaluación de Rendimiento (CPIA)}
+
+El diseño propuesto traslada las operaciones críticas a rutinas de álgebra lineal y cálculo multihilo en CPU, satisfaciendo los criterios de evaluación de la asignatura:
+
+\begin{enumerate}
+    \item \textbf{Paralelización con OpenMP en C/C++:}
+    La agregación de perfiles de usuario, el preprocesamiento de matrices dispersas y el cálculo masivo de productos escalares durante la inferencia y el re-ranking se implementan mediante bucles paralelizados con directivas OpenMP:
+    \begin{lstlisting}
+#pragma omp parallel for schedule(dynamic, 64)
+for (int u = 0; u < num_usuarios; ++u) {
+    calcular_perfil_usuario(&usuarios[u], items_db, dim_embedding);
+    evaluar_similitudes_simd(&usuarios[u], candidatos, top_k);
+}
+    \end{lstlisting}
+    \item \textbf{Vectorización SIMD (AVX2 / AVX-512):}
+    Los productos internos entre vectores normalizados de dimensión fija ($d = 128$) se procesan empleando registros vectoriales continuos, procesando hasta 8 o 16 operaciones de punto flotante por ciclo de reloj por núcleo.
+    \item \textbf{Métricas de Aceleración (\textit{Speedup}) y Escalabilidad:}
+    Se registrará el tiempo de ejecución en función del número de hilos $p \in \{1, 2, 4, 8, 16\}$, caracterizando el \textit{Speedup} experimental $S_p = T_1 / T_p$ y la eficiencia paralela $E_p = S_p / p$. Se evaluará el límite teórico según la Ley de Amdahl:
+    \begin{equation}
+        S_p = \frac{1}{(1 - f) + \frac{f}{p}}
+        \label{eq:amdahl}
+    \end{equation}
+    identificando la fracción estrictamente paralelizable $f$ del pipeline de recomendación.
+\end{enumerate}
+
+\section{Conclusiones y Próximos Pasos}
+La propuesta presentada aborda de forma unificada el rigor en modelado de recomendaciones y la optimización de computación de altas prestaciones. El desacoplamiento estructural de la arquitectura Two-Tower garantiza un consumo predecible de memoria frente a la matriz masiva de MovieLens 32M, habilita la inferencia en tiempo real para usuarios de Letterboxd y permite centrar los esfuerzos de paralelización en rutinas de cómputo intensivo evaluables mediante directivas OpenMP y aceleración vectorial en CPU.
+
+% ==========================================
+% BIBLIOGRAFIA
+% ==========================================
+\begin{thebibliography}{99}
+
+\bibitem{movielens}
+Harper, F. M., \& Konstan, J. A. (2015). \textit{The MovieLens Datasets: History and Context}. ACM Transactions on Interactive Intelligent Systems (TiiS), 5(4), 1--19.
+
+\bibitem{steck2019}
+Steck, H. (2019). \textit{Embarrassingly Shallow Autoencoders for Sparse Data}. Proceedings of the World Wide Web Conference (WWW '19), 3251--3257.
+
+\bibitem{liang2018}
+Liang, D., Krishnan, R. G., Hoffman, M. D., \& Jebara, T. (2018). \textit{Variational Autoencoders for Collaborative Filtering}. Proceedings of the 2018 World Wide Web Conference (WWW '18), 687--696.
+
+\bibitem{he2017}
+He, X., Liao, L., Zhang, H., Nie, L., Hu, X., \& Chua, T. S. (2017). \textit{Neural Collaborative Filtering}. Proceedings of the 26th International Conference on World Wide Web (WWW '17), 173--182.
+
+\bibitem{yi2019}
+Yi, X., Yang, J., Hong, L., Cheng, D. Z., Heldt, L., Kumthekar, A., Zhao, Z., Wei, L., \& Chi, E. (2019). \textit{Sampling-Bias-Corrected Neural Modeling for Large Corpus Item Recommendations}. Proceedings of the 13th ACM Conference on Recommender Systems (RecSys '19), 269--277.
+
+\bibitem{openmp}
+OpenMP Architecture Review Board. (2018). \textit{OpenMP Application Programming Interface Version 5.0}. Technical Report.
+
+\end{thebibliography}
+
+\end{document}
