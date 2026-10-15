@@ -20,7 +20,7 @@ python -m src.preprocesamiento.submuestra    # A2 -> data/processed/ratings_dev_
 | # | Decisión | Por qué |
 |---|---|---|
 | A1 | Solo `ml-32m/ratings.csv` | El `ratings.csv` de TMDB Kaggle es MovieLens antiguo (2017) con otros IDs: duplicaría interacciones sin poder detectarlo. De Kaggle solo usamos metadatos. |
-| A2 | Submuestra de desarrollo del 10 % **por usuarios**, estratificada (género dominante × quintil de actividad × época del primer rating); el conjunto completo, solo para resultados finales | Iterar rápido sin romper historiales. El reparto de géneros difiere como mucho 0,27 pp (ver `reports/submuestra.md`). |
+| A2 | Submuestra de desarrollo del 10 % **por usuarios**, estratificada (género dominante × quintil de actividad × época del primer rating); el conjunto completo, solo para resultados finales | Iterar rápido sin romper historiales. El reparto de géneros difiere como mucho 0,35 pp (ver `reports/submuestra.md`). |
 | A3 | Todo el histórico (1995–2023) | Sin recorte temporal por ahora. |
 | A4 | Dataset 2024–2026 descartado de momento | No tiene IDs (solo título) y tiene cifras sospechosas (p. ej. 280 952 votos en un título desconocido). Revisarlo más adelante. |
 
