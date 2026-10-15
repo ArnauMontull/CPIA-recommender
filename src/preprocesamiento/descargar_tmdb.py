@@ -21,6 +21,7 @@ import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 import pandas as pd
 
@@ -28,6 +29,8 @@ from .comun import CRUDOS_ML, CRUDOS_TMDB, DATA, PROCESADOS, RAIZ, marcar
 
 TAREA = "CPIA TMDB API"
 SALIDA = DATA / "external" / "tmdb_api.jsonl"
+SALIDA_CORR = DATA / "external" / "tmdb_correcciones.jsonl"
+CORRECCIONES = Path(__file__).with_name("correcciones_tmdb.csv")
 URL = "https://api.themoviedb.org/3/movie/{id}?language=en-US&append_to_response=keywords,credits"
 SINOPSIS_VACIAS = {"", "no overview found.", "no overview", "no movie overview available."}
 
@@ -77,7 +80,11 @@ class Cliente:
         self.lock = threading.Lock()
 
     def get(self, tmdb_id: int) -> dict:
-        url = URL.format(id=tmdb_id)
+        return self.get_ruta(URL.format(id=tmdb_id))
+
+    def get_ruta(self, url: str) -> dict:
+        if url.startswith("/"):
+            url = "https://api.themoviedb.org/3" + url
         cab = {"accept": "application/json"}
         if self.es_token:
             cab["Authorization"] = f"Bearer {self.cred}"
@@ -125,6 +132,27 @@ def resumir(tmdb_id: int, d: dict) -> dict:
     }
 
 
+def descargar_correcciones(cliente: Cliente) -> None:
+    """Películas de MovieLens cuyo tmdbId apunta a algo que no existe (casi todas son series o episodios).
+
+    El enlace correcto se buscó a mano por su imdbId con /find de TMDB y está en correcciones_tmdb.csv.
+    Para un episodio se usa su sinopsis y los géneros de la serie.
+    """
+    corr = pd.read_csv(CORRECCIONES, dtype={"temporada": "Int64", "episodio": "Int64"})
+    with SALIDA_CORR.open("w", encoding="utf-8") as f:
+        for c in corr.itertuples():
+            base = "/tv" if c.tipo in ("tv", "episodio") else "/movie"
+            ficha = cliente.get_ruta(f"{base}/{c.tmdb_id}?language=en-US")
+            sinopsis = (ficha.get("overview") or "").strip()
+            if c.tipo == "episodio":
+                ep = cliente.get_ruta(f"/tv/{c.tmdb_id}/season/{c.temporada}/episode/{c.episodio}?language=en-US")
+                sinopsis = (ep.get("overview") or "").strip()
+            fila = {"movieId": int(c.movieId), "tipo": c.tipo, "estado": ficha["estado"], "sinopsis": sinopsis,
+                    "generos": [g["name"] for g in ficha.get("genres", [])]}
+            f.write(json.dumps(fila, ensure_ascii=False) + "\n")
+            print(f"  {c.movieId} {c.tipo:8s} {ficha['estado']} {fila['generos']} | {sinopsis[:60]}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--limite", type=int, default=0, help="descargar solo N (para probar)")
@@ -150,6 +178,8 @@ def main() -> None:
                 f.flush()
                 marcar(TAREA, n, len(ids), f"{n / (time.time() - t0):.0f} pelis/s")
     print("estados HTTP:", estados, f"en {time.time() - t0:.0f} s")
+    print("Correcciones manuales (correcciones_tmdb.csv):")
+    descargar_correcciones(cliente)
 
 
 if __name__ == "__main__":

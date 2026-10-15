@@ -16,9 +16,10 @@ Generado por `python -m src.preprocesamiento.validar --min-ratings 20`. Corrige 
 | tmdb | id duplicado | 30 | se conserva la primera |
 | tmdb | sinopsis vacía o de relleno («No overview found.»…) | 1.103 | se deja vacía |
 | movies×tmdb | sinopsis recuperadas de la API de TMDB | 3.412 | rellenadas |
-| movies×tmdb | película de ML sin fila en TMDB Kaggle (2017) | 41.294 | flag en_tmdb = False |
-| movies×tmdb | película de ML sin sinopsis | 42.267 | flag tiene_sinopsis = False (B2: se mantiene) |
-| ratings | filas leídas | 32.000.204 | lectura en 2.5 s |
+| movies×tmdb | corregidas a mano (series. episodios. vídeos) | 13 | sinopsis de TMDB; géneros traducidos al vocabulario de MovieLens en 13; flag es_serie |
+| movies×tmdb | película de ML sin fila en TMDB Kaggle (2017) | 41.281 | flag en_tmdb = False |
+| movies×tmdb | película de ML sin sinopsis | 42.254 | flag tiene_sinopsis = False (B2: se mantiene) |
+| ratings | filas leídas | 32.000.204 | lectura en 2.7 s |
 | ratings | valores nulos | 0 | se eliminan |
 | ratings | nota fuera de {0.5. 1.0. …. 5.0} | 0 | se eliminan |
 | ratings | movieId inexistente en movies.csv | 0 | se eliminan |
@@ -33,8 +34,8 @@ Generado por `python -m src.preprocesamiento.validar --min-ratings 20`. Corrige 
 
 ## Resumen (después de fusionar y filtrar)
 - Ratings: 31.725.154; usuarios: 200.948; películas: 23.335.
-- Películas con sinopsis: 23.195 (99.4%); ratings cuya película tiene sinopsis: **99.9%**.
-- Películas sin géneros ni sinopsis: 15.
+- Películas con sinopsis: 23.208 (99.5%); ratings cuya película tiene sinopsis: **99.9%**.
+- Películas sin géneros ni sinopsis: 2.
 
 ## Duplicados fusionados (mismo tmdbId)
 | movieId absorbido | → movieId | Título | Año | tmdbId | Ratings que aporta |

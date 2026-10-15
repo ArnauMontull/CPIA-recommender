@@ -24,6 +24,20 @@ from .comun import CRUDOS_ML, CRUDOS_TMDB, DATA, INFORMES, PROCESADOS, leer_rati
 
 TAREA = "CPIA validar"
 API = DATA / "external" / "tmdb_api.jsonl"
+API_CORR = DATA / "external" / "tmdb_correcciones.jsonl"
+# Géneros de TMDB (películas y series) -> vocabulario de MovieLens; los que no tienen equivalente se ignoran
+TMDB_A_ML = {
+    "Action": ["Action"], "Adventure": ["Adventure"], "Action & Adventure": ["Action", "Adventure"],
+    "Animation": ["Animation"], "Comedy": ["Comedy"], "Crime": ["Crime"], "Documentary": ["Documentary"],
+    "Drama": ["Drama"], "Family": ["Children"], "Kids": ["Children"], "Fantasy": ["Fantasy"],
+    "Science Fiction": ["Sci-Fi"], "Sci-Fi & Fantasy": ["Sci-Fi", "Fantasy"], "Horror": ["Horror"],
+    "Mystery": ["Mystery"], "Romance": ["Romance"], "Thriller": ["Thriller"], "War": ["War"],
+    "War & Politics": ["War"], "Western": ["Western"], "Music": ["Musical"],
+}
+
+
+def a_generos_ml(generos_tmdb: list[str]) -> list[str]:
+    return sorted({g for t in generos_tmdb for g in TMDB_A_ML.get(t, [])})
 NOTAS_VALIDAS = np.arange(0.5, 5.01, 0.5, dtype="float32")
 # MovieLens 32M: ratings entre 1995 y octubre de 2023 (README del dataset)
 TS_MIN = int(pd.Timestamp("1995-01-01").timestamp())
@@ -106,6 +120,27 @@ def validar_tmdb(m: pd.DataFrame) -> pd.DataFrame:
         m.loc[hueco & (m.sinopsis.str.len() > 0), "fuente_sinopsis"] = "api"
         m.loc[hueco, "en_tmdb"] = True
         apunta("movies×tmdb", "sinopsis recuperadas de la API de TMDB", (m.fuente_sinopsis == "api").sum(), "rellenadas")
+
+    # Correcciones manuales (correcciones_tmdb.csv): tmdbId roto, casi siempre series o episodios
+    m["es_serie"] = False
+    m["generos_imputados"] = False
+    if API_CORR.exists():
+        corr = pd.read_json(API_CORR, lines=True)
+        corr = corr[corr.estado == 200].set_index("movieId")
+        idx = m.index[m.movieId.isin(corr.index)]
+        c = corr.loc[m.loc[idx, "movieId"]]
+        m.loc[idx, "sinopsis"] = c.sinopsis.fillna("").to_numpy()
+        m.loc[idx, "generos_tmdb"] = pd.Series(list(c.generos), index=idx)
+        m.loc[idx, "fuente_sinopsis"] = "correccion"
+        m.loc[idx, "en_tmdb"] = True
+        m.loc[idx, "es_serie"] = c.tipo.isin(["tv", "episodio"]).to_numpy()
+        # Si MovieLens no les da géneros, se traducen los de TMDB a su vocabulario
+        vacios = idx[m.loc[idx, "sin_generos"].to_numpy()]
+        m.loc[vacios, "generos"] = pd.Series([a_generos_ml(g) for g in m.loc[vacios, "generos_tmdb"]], index=vacios)
+        m.loc[vacios, "generos_imputados"] = m.loc[vacios, "generos"].map(len) > 0
+        m.loc[vacios, "sin_generos"] = ~m.loc[vacios, "generos_imputados"]
+        apunta("movies×tmdb", "corregidas a mano (series, episodios, vídeos)", len(idx),
+               f"sinopsis de TMDB; géneros traducidos al vocabulario de MovieLens en {m.generos_imputados.sum()}; flag es_serie")
     m["tiene_sinopsis"] = m.sinopsis.str.len() > 0
     apunta("movies×tmdb", "película de ML sin fila en TMDB Kaggle (2017)", (~m.en_tmdb).sum(), "flag en_tmdb = False")
     apunta("movies×tmdb", "película de ML sin sinopsis", (~m.tiene_sinopsis).sum(), "flag tiene_sinopsis = False (B2: se mantiene)")
