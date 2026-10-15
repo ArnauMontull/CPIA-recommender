@@ -1,0 +1,43 @@
+# Decisiones de preprocesamiento
+
+Registro de las decisiones del planning de preprocesamiento (bloques A–H). Cada una se convertirá en un
+parámetro del pipeline. Las que siguen abiertas están marcadas como **pendiente**.
+
+## Cómo reproducir
+
+```
+python -m venv venv && venv\Scripts\pip install -r requirements.txt
+python -m src.preprocesamiento.validar       # B4 -> data/processed/{ratings,movies}.parquet + reports/validacion.md
+python -m src.preprocesamiento.submuestra    # A2 -> data/processed/ratings_dev_10pct.parquet + reports/submuestra.md
+```
+
+`data/` no está en git: cada uno pone los CSV originales en `data/ml-32m/` y `data/the_movies_dataset_kaggle/`.
+
+## Bloque A: qué datos entran (15/10/2026)
+
+| # | Decisión | Por qué |
+|---|---|---|
+| A1 | Solo `ml-32m/ratings.csv` | El `ratings.csv` de TMDB Kaggle es MovieLens antiguo (2017) con otros IDs: duplicaría interacciones sin poder detectarlo. De Kaggle solo usamos metadatos. |
+| A2 | Submuestra de desarrollo del 10 % **por usuarios**, estratificada (género dominante × quintil de actividad × época del primer rating); el conjunto completo, solo para resultados finales | Iterar rápido sin romper historiales. El reparto de géneros difiere como mucho 0,27 pp (ver `reports/submuestra.md`). |
+| A3 | Todo el histórico (1995–2023) | Sin recorte temporal por ahora. |
+| A4 | Dataset 2024–2026 descartado de momento | No tiene IDs (solo título) y tiene cifras sospechosas (p. ej. 280 952 votos en un título desconocido). Revisarlo más adelante. |
+
+## Bloque B: limpieza (15/10/2026)
+
+| # | Decisión | Por qué |
+|---|---|---|
+| B1 | Sin *k-core* | MovieLens 32M ya trae un mínimo de 20 ratings por usuario; filtrar películas eliminaría la cola larga que debe rescatar la torre semántica. |
+| B2 | Las películas sin sinopsis se mantienen (sinopsis vacía + flag) | El 52 % del catálogo no tiene fila en TMDB Kaggle (el dataset es de 2017), pero ese 52 % solo suma el 3,4 % de los ratings. |
+| B3 | **Pendiente**: géneros de MovieLens o de TMDB | Ver la comparación más abajo. |
+| B4 | Validación de integridad con correcciones y flags | `reports/validacion.md`. Los ratings vienen limpios (0 nulos, 0 duplicados, 0 notas inválidas); los problemas están en los metadatos. |
+
+### B3: comparación de géneros
+
+Ambas fuentes tienen 20 géneros, pero no son los mismos:
+
+- **Comunes (16)**: Action, Adventure, Animation, Comedy, Crime, Documentary, Drama, Fantasy, Horror, Mystery, Romance,
+  Sci-Fi = Science Fiction, Thriller, War, Western, y Children ≈ Family (parecidos, no iguales).
+- **Solo MovieLens**: Musical, Film-Noir, IMAX (IMAX es un formato de proyección, no un género) y Children.
+- **Solo TMDB**: Family, Music, History, Foreign (indica que la película no es estadounidense, no es un género) y TV Movie.
+- **Cobertura**: MovieLens tiene géneros en 80 505 de 87 585 películas (7 080 «(no genres listed)»); TMDB solo cubre las
+  ~42 000 que están en Kaggle. De las 7 080 sin género en ML, TMDB rellena 1 188.
