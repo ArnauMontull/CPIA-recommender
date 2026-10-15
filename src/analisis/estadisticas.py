@@ -18,8 +18,8 @@ SALIDA = INFORMES / "estadisticas"
 TAREA = "CPIA estadísticas"
 
 
-def guardar(df: pd.DataFrame, nombre: str) -> None:
-    df.to_csv(SALIDA / f"{nombre}.csv", index=False, float_format="%.6g")
+def guardar(df: pd.DataFrame, nombre: str, formato: str | None = "%.6g") -> None:
+    df.to_csv(SALIDA / f"{nombre}.csv", index=False, float_format=formato)
 
 
 def genero_principal(m: pd.DataFrame) -> pd.Series:
@@ -67,7 +67,8 @@ def main() -> None:
         ("mediana_ratings_pelicula", por_peli.n.median()), ("gini_peliculas", gini),
         ("pct_ratings_top10_peliculas", 100 * top10),
         ("primer_anio", r.anio_rating.min()), ("ultimo_anio", r.anio_rating.max()),
-    ], columns=["metrica", "valor"]), "resumen")
+    ], columns=["metrica", "valor"]).assign(valor=lambda d: d.valor.map(lambda v: f"{v:.6g}" if v % 1 else f"{int(v)}")),
+        "resumen", formato=None)
 
     # 2. Notas
     marcar(TAREA, 2, pasos, "notas y tiempo")
