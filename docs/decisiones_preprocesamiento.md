@@ -44,3 +44,8 @@ Ambas fuentes tienen 20 géneros, pero no son los mismos:
 - **Solo TMDB**: Family, Music, History, Foreign (indica que la película no es estadounidense, no es un género) y TV Movie.
 - **Cobertura**: MovieLens tiene géneros en 80 505 de 87 585 películas (7 080 «(no genres listed)»); TMDB solo cubre las
   ~42 000 que están en Kaggle. De las 7 080 sin género en ML, TMDB rellena 1 188.
+
+## Bloque C: señal objetivo («le gusta»)
+
+**Pendiente.** Preguntas C1–C14 con opciones, cifras y recomendación en `docs/planning_bloque_C.md`; las medidas
+salen de `python -m src.analisis.senal_objetivo` (`reports/senal_objetivo.md`). C1 se decide junto con D1 y F1.
