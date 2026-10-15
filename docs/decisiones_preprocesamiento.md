@@ -7,7 +7,9 @@ parámetro del pipeline. Las que siguen abiertas están marcadas como **pendient
 
 ```
 python -m venv venv && venv\Scripts\pip install -r requirements.txt
-python -m src.preprocesamiento.validar       # B4 -> data/processed/{ratings,movies}.parquet + reports/validacion.md
+python -m src.preprocesamiento.validar         # B4 -> data/processed/{ratings,movies,fusiones}.parquet + reports/validacion.md
+python -m src.preprocesamiento.descargar_tmdb  # sinopsis que faltan (necesita token de TMDB, ver el docstring)
+python -m src.preprocesamiento.validar         # otra vez, para incorporar lo descargado
 python -m src.preprocesamiento.submuestra    # A2 -> data/processed/ratings_dev_10pct.parquet + reports/submuestra.md
 ```
 
@@ -26,8 +28,9 @@ python -m src.preprocesamiento.submuestra    # A2 -> data/processed/ratings_dev_
 
 | # | Decisión | Por qué |
 |---|---|---|
-| B1 | Sin *k-core* | MovieLens 32M ya trae un mínimo de 20 ratings por usuario; filtrar películas eliminaría la cola larga que debe rescatar la torre semántica. |
-| B2 | Las películas sin sinopsis se mantienen (sinopsis vacía + flag) | El 52 % del catálogo no tiene fila en TMDB Kaggle (el dataset es de 2017), pero ese 52 % solo suma el 3,4 % de los ratings. |
+| B1 | ~~Sin *k-core*~~ → **revisada: fuera las películas con < 20 ratings** (y sus ratings) | Usuarios: MovieLens ya trae ≥ 20 por usuario. Películas: pasan de 87 585 a 23 335, pero solo se pierde el 0,86 % de los ratings. Contrapartida: la cola larga extrema desaparece, y el argumento de arranque en frío de E1 habrá que defenderlo con películas de 20–100 ratings o con un experimento aparte. 185 usuarios quedan con < 20 ratings tras el filtro; se mantienen. |
+| B1b | Duplicados fusionados: 36 `movieId` con el mismo `tmdbId` se integran en el que tiene más ratings | Son la misma película (p. ej. *Confessions of a Dangerous Mind* dos veces). Si un usuario valoró las dos copias (836 casos), se queda la nota más reciente. Lista en `reports/validacion.md`. |
+| B2 | Las películas sin sinopsis se mantienen (sinopsis vacía + flag) y los huecos se rellenan con la API de TMDB | Kaggle es de 2017. Tras el filtro faltaban 3 508 sinopsis; la API recupera 3 412 (117 404). Ahora el 99,4 % de las películas y el 99,9 % de los ratings tienen sinopsis. Quedan 15 películas sin géneros ni sinopsis. |
 | B3 | **Pendiente**: géneros de MovieLens o de TMDB | Ver la comparación más abajo. |
 | B4 | Validación de integridad con correcciones y flags | `reports/validacion.md`. Los ratings vienen limpios (0 nulos, 0 duplicados, 0 notas inválidas); los problemas están en los metadatos. |
 

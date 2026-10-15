@@ -1,24 +1,29 @@
 """Etapa 1 (B4): validación de integridad de MovieLens 32M y TMDB.
 
-Corrige lo que se puede corregir sin tomar decisiones de modelado y marca (flag) el resto.
+Corrige lo que se puede corregir sin tomar decisiones de modelado y marca (flag) el resto. Además fusiona los
+movieId duplicados (mismo tmdbId) y elimina las películas con menos de --min-ratings ratings (B1).
+Si existe data/external/tmdb_api.jsonl (descargar_tmdb.py), rellena con él las sinopsis que faltan en Kaggle.
 Salidas:
   data/processed/ratings.parquet   ratings limpios (+ flag antes_estreno)
-  data/processed/movies.parquet    catálogo con año, géneros en lista, tmdbId y flags
+  data/processed/movies.parquet    catálogo con año, géneros en lista, tmdbId, n_ratings y flags
+  data/processed/fusiones.parquet  movieId absorbido -> movieId que se queda
   reports/validacion.md            qué se ha comprobado, cuántas filas y qué se ha hecho
 
-Uso: python -m src.preprocesamiento.validar   (desde la raíz del repo)
+Uso: python -m src.preprocesamiento.validar [--min-ratings 20]   (desde la raíz del repo)
 """
 from __future__ import annotations
 
+import argparse
 import ast
 import time
 
 import numpy as np
 import pandas as pd
 
-from .comun import CRUDOS_ML, CRUDOS_TMDB, INFORMES, PROCESADOS, leer_ratings, marcar
+from .comun import CRUDOS_ML, CRUDOS_TMDB, DATA, INFORMES, PROCESADOS, leer_ratings, marcar
 
 TAREA = "CPIA validar"
+API = DATA / "external" / "tmdb_api.jsonl"
 NOTAS_VALIDAS = np.arange(0.5, 5.01, 0.5, dtype="float32")
 # MovieLens 32M: ratings entre 1995 y octubre de 2023 (README del dataset)
 TS_MIN = int(pd.Timestamp("1995-01-01").timestamp())
@@ -88,6 +93,19 @@ def validar_tmdb(m: pd.DataFrame) -> pd.DataFrame:
     m["en_tmdb"] = m.sinopsis.notna()
     m["sinopsis"] = m.sinopsis.fillna("")
     m["generos_tmdb"] = m.generos_tmdb.map(lambda g: g if isinstance(g, list) else [])
+    m["fuente_sinopsis"] = np.where(m.sinopsis.str.len() > 0, "kaggle", "")
+
+    # Lo descargado de la API (descargar_tmdb.py) rellena los huecos de Kaggle
+    if API.exists():
+        api = pd.read_json(API, lines=True)
+        api = api[api.estado == 200].drop_duplicates("tmdbId", keep="last").set_index("tmdbId")
+        hueco = (m.sinopsis.str.len() == 0) & m.tmdbId.isin(api.index)
+        desde_api = api.loc[m.tmdbId[hueco].astype(int)]
+        m.loc[hueco, "sinopsis"] = desde_api.sinopsis.fillna("").to_numpy()
+        m.loc[hueco, "generos_tmdb"] = pd.Series(list(desde_api.generos), index=m.index[hueco])
+        m.loc[hueco & (m.sinopsis.str.len() > 0), "fuente_sinopsis"] = "api"
+        m.loc[hueco, "en_tmdb"] = True
+        apunta("movies×tmdb", "sinopsis recuperadas de la API de TMDB", (m.fuente_sinopsis == "api").sum(), "rellenadas")
     m["tiene_sinopsis"] = m.sinopsis.str.len() > 0
     apunta("movies×tmdb", "película de ML sin fila en TMDB Kaggle (2017)", (~m.en_tmdb).sum(), "flag en_tmdb = False")
     apunta("movies×tmdb", "película de ML sin sinopsis", (~m.tiene_sinopsis).sum(), "flag tiene_sinopsis = False (B2: se mantiene)")
@@ -132,37 +150,77 @@ def validar_ratings(m: pd.DataFrame) -> pd.DataFrame:
     apunta("ratings", "valorada más de 1 año antes del estreno", antes.sum(), "flag antes_estreno (no se borra)")
     r["antes_estreno"] = antes
 
+    return r
+
+
+def fusionar_duplicados(r: pd.DataFrame, m: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Varios movieId con el mismo tmdbId son la misma película: se quedan en el que tiene más ratings."""
+    n = r.movieId.value_counts()
+    dup = m[m.tmdb_compartido].assign(n=lambda d: d.movieId.map(n).fillna(0)).sort_values(["tmdbId", "n"], ascending=[True, False])
+    canon = dup.groupby("tmdbId").movieId.transform("first")
+    fus = dup.assign(destino=canon)[lambda d: d.movieId != d.destino][["movieId", "destino", "titulo", "anio", "tmdbId", "n"]]
+    apunta("movies", "duplicados por tmdbId fusionados", len(fus), f"{len(fus)} movieId absorbidos en otro (ver data/processed/fusiones.parquet)")
+
+    mapa = dict(zip(fus.movieId, fus.destino))
+    r = r.assign(movieId=r.movieId.map(lambda x: mapa.get(x, x)).astype("int32"))
+    clave = r.userId.to_numpy().astype("int64") * 1_000_000 + r.movieId.to_numpy()
+    r = r.assign(_k=clave).sort_values(["_k", "timestamp"])
+    dup_r = r._k.duplicated(keep="last")
+    apunta("ratings", "usuario que valoró las dos copias de un duplicado", dup_r.sum(), "se conserva la nota más reciente")
+    r = r[~dup_r].drop(columns="_k")
+    m = m[~m.movieId.isin(fus.movieId)].copy()
+    m["tmdb_compartido"] = m.tmdbId.notna() & m.duplicated("tmdbId", keep=False)
+    return r, m, fus
+
+
+def filtrar_peliculas(r: pd.DataFrame, m: pd.DataFrame, minimo: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Decisión B1 (revisada el 15/10/2026): fuera las películas con menos de `minimo` ratings, y sus ratings."""
+    n = r.movieId.value_counts()
+    m["n_ratings"] = m.movieId.map(n).fillna(0).astype("int32")
+    fuera = m.n_ratings < minimo
+    apunta("movies", f"películas con < {minimo} ratings", fuera.sum(),
+           f"se eliminan ({m.n_ratings[fuera].sum():,}".replace(",", ".") + f" ratings; {m.n_ratings[fuera].sum() / len(r):.2%})")
+    m = m[~fuera].reset_index(drop=True)
+    r = r[r.movieId.isin(m.movieId)]
     por_usuario = r.groupby("userId").size()
     apunta("ratings", "usuarios", len(por_usuario), "—")
-    apunta("ratings", "usuarios con < 5 ratings", (por_usuario < 5).sum(), "se mantienen (B1: sin filtro)")
-    return r.sort_values(["userId", "timestamp"]).reset_index(drop=True)
+    apunta("ratings", "usuarios que quedan con < 20 ratings tras el filtro", (por_usuario < 20).sum(), "se mantienen")
+    return r.sort_values(["userId", "timestamp"]).reset_index(drop=True), m
 
 
-def escribir_informe(r: pd.DataFrame, m: pd.DataFrame) -> None:
+def escribir_informe(r: pd.DataFrame, m: pd.DataFrame, fus: pd.DataFrame, minimo: int) -> None:
     INFORMES.mkdir(exist_ok=True)
-    peliculas_con_rating = r.movieId.unique()
     mm = m.set_index("movieId")
     cobertura = mm.loc[r.movieId.to_numpy(), "tiene_sinopsis"].mean()
     lineas = [
         "# Validación de integridad (B4)",
         "",
-        "Generado por `python -m src.preprocesamiento.validar`. Corrige lo que no implica decisiones de modelado"
-        " y marca el resto con columnas booleanas en `data/processed/*.parquet`.",
+        f"Generado por `python -m src.preprocesamiento.validar --min-ratings {minimo}`. Corrige lo que no implica"
+        " decisiones de modelado y marca el resto con columnas booleanas en `data/processed/*.parquet`.",
         "",
         "| Tabla | Comprobación | Filas afectadas | Acción |",
         "|---|---|---:|---|",
         *[f"| {t} | {c} | {n:,} | {a} |".replace(",", ".") for t, c, n, a in filas],
         "",
-        "## Resumen",
-        f"- Ratings finales: {len(r):,}; usuarios: {r.userId.nunique():,}; películas con al menos un rating:"
-        f" {len(peliculas_con_rating):,} de {len(m):,}.".replace(",", "."),
-        f"- Ratings cuya película tiene sinopsis TMDB: **{cobertura:.1%}** (aunque solo el"
-        f" {m.tiene_sinopsis.mean():.1%} del catálogo la tiene: las películas sin sinopsis son sobre todo de la cola larga).",
+        "## Resumen (después de fusionar y filtrar)",
+        f"- Ratings: {len(r):,}; usuarios: {r.userId.nunique():,}; películas: {len(m):,}.".replace(",", "."),
+        f"- Películas con sinopsis: {m.tiene_sinopsis.sum():,} ({m.tiene_sinopsis.mean():.1%});"
+        f" ratings cuya película tiene sinopsis: **{cobertura:.1%}**.".replace(",", "."),
+        f"- Películas sin géneros ni sinopsis: {(m.sin_generos & ~m.tiene_sinopsis).sum()}.",
+        "",
+        "## Duplicados fusionados (mismo tmdbId)",
+        "| movieId absorbido | → movieId | Título | Año | tmdbId | Ratings que aporta |",
+        "|---:|---:|---|---:|---:|---:|",
+        *[f"| {f.movieId} | {f.destino} | {f.titulo} | {f.anio} | {f.tmdbId} | {int(f.n)} |" for f in fus.itertuples()],
     ]
     (INFORMES / "validacion.md").write_text("\n".join(lineas) + "\n", encoding="utf-8")
 
 
 def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--min-ratings", type=int, default=20, help="mínimo de ratings por película (B1)")
+    a = ap.parse_args()
+
     PROCESADOS.mkdir(parents=True, exist_ok=True)
     marcar(TAREA, 0, 7, "movies y links")
     m = validar_movies()
@@ -170,10 +228,13 @@ def main() -> None:
     m = validar_tmdb(m)
     marcar(TAREA, 2, 7, "leyendo ratings (32M)")
     r = validar_ratings(m)
-    marcar(TAREA, 6, 7, "guardando parquet")
+    marcar(TAREA, 6, 7, "fusión, filtro y guardado")
+    r, m, fus = fusionar_duplicados(r, m)
+    r, m = filtrar_peliculas(r, m, a.min_ratings)
     r.to_parquet(PROCESADOS / "ratings.parquet", index=False)
     m.drop(columns=["title", "genres"]).to_parquet(PROCESADOS / "movies.parquet", index=False)
-    escribir_informe(r, m)
+    fus.to_parquet(PROCESADOS / "fusiones.parquet", index=False)
+    escribir_informe(r, m, fus, a.min_ratings)
     marcar(TAREA, 7, 7, "hecho")
 
 
