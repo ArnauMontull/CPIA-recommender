@@ -134,24 +134,34 @@
 % ==========================================
 \section{Definición del Problema a Resolver}
 
-En el ámbito del entretenimiento digital bajo demanda, los sistemas de recomendación constituyen el componente algorítmico crítico encargado de mitigar la sobrecarga informativa del usuario. No obstante, diseñar un motor de recomendación escalable sobre catálogos con decenas de miles de películas impone restricciones estructurales severas derivadas de la naturaleza de los datos:
+\subsection{La Perspectiva del Usuario: La Fatiga de Elección}
+En la actualidad, uno de los mayores inconvenientes al abrir una plataforma de contenidos audiovisuales es la llamada fatiga de decisión: los usuarios a menudo invierten más tiempo navegando por menús y carruseles interminables que disfrutando de una película. La mayoría de las recomendaciones que aparecen en pantalla suelen percibirse como poco atractivas, irrelevantes o repetitivas, mostrando una y otra vez los mismos éxitos comerciales. 
+
+El usuario busca descubrir obras que encajen verdaderamente con su gusto personal, incluyendo cine de autor o títulos periféricos de calidad, pero el volumen inmanejable de los catálogos modernos convierte la búsqueda manual en una experiencia lenta y poco satisfactoria.
+
+\subsection{Dificultades Técnicas al Diseñar la Solución}
+Hacer una recomendación acertada y personalizada no es trivial debido a las limitaciones estructurales que presentan los datos a gran escala:
 
 \begin{enumerate}
-    \item \textbf{Esparcidad extrema de datos (\textit{High Sparsity}):} En matrices de interacción usuario-película a gran escala, la inmensa mayoría de las combinaciones posibles carecen de observación. Un usuario medio evalúa una fracción inferior al $0.1\%$ del catálogo, lo que genera una matriz con un nivel de dispersión superior al $99.8\%$. Los métodos algebraicos puros sufren inestabilidad numérica ante este vacío informativo.
-    \item \textbf{Sesgo de popularidad (\textit{Popularity Bias}):} Las interacciones observadas siguen una ley de potencias fuertemente desbalanceada. Los modelos de aprendizaje supervisado tienden a maximizar métricas globales recomendando sistemáticamente un núcleo reducido de películas hiperpopulares (\textit{blockbusters}), invisibilizando el catálogo de nicho o cine de autor (\textit{long-tail}) que concentra el interés diferencial de los usuarios cinéfilos.
-    \item \textbf{El desafío del arranque en frío (\textit{Cold-Start}):} Los enfoques de filtrado colaborativo puro colapsan al incorporar películas recién estrenadas o al recibir usuarios nuevos (por ejemplo, mediante la importación de historiales externos de Letterboxd), ya que requieren un historial denso previo para asignar vectores latentes válidos.
-    \item \textbf{Latencia y escalabilidad en inferencia (Requisito CPIA):} Evaluar funciones de predicción complejas contra la totalidad del inventario en tiempo real resulta computacionalmente inviable. Se requiere un desacoplamiento algorítmico que traslade el grueso del cómputo a fases precomputadas y aproveche la vectorización SIMD y el paralelismo multihilo en CPU.
+    \item \textbf{Casi nadie ha visto casi nada (Esparcidad masiva):} En un catálogo con más de $80\,000$ títulos, una persona promedio evalúa solo unas pocas decenas o cientos de obras. Esto significa que más del $99.8\%$ de la matriz de interacciones carece de datos. Los algoritmos clásicos de filtrado colaborativo tienen dificultades para inferir relaciones cuando coinciden tan pocas valoraciones entre usuarios.
+    
+    \item \textbf{Siempre se recomienda lo mismo (Sesgo de popularidad):} El análisis de los datos revela que el $10\%$ de las películas comerciales concentra más del $95\%$ de todas las calificaciones. Como consecuencia directa, los modelos estándar tienden a recomendar de forma redundante títulos muy votados (\textit{blockbusters}) para maximizar su probabilidad de acierto global, invisibilizando miles de películas valiosas de la cola larga (\textit{long-tail}).
+    
+    \item \textbf{El reto de los usuarios reales y el arranque en frío (\textit{Cold-Start}):} Cuando se añade una película recién estrenada o se incorpora un usuario nuevo, el sistema carece de historial acumulado. Un caso representativo en la comunidad de ciencia de datos es el proyecto de Sam Learner en Kaggle (\textit{Letterboxd Movie Ratings Data}), donde se recopilaron las valoraciones de los $4\,000$ usuarios más activos de Letterboxd. Cuando usuarios reales intentan conectar su perfil para recibir recomendaciones basadas en su diario personal (\textit{diary}), los modelos basados únicamente en IDs de usuario colapsan si no son capaces de procesar secuencias arbitrarias y asociarlas con los metadatos y sinopsis del catálogo.
+    
+    \item \textbf{Tiempos de respuesta lentos (Latencia y cómputo en CPU):} Comparar el perfil de un usuario contra decenas de miles de películas evaluando redes neuronales completas en tiempo real genera cuellos de botella inasumibles para un servicio interactivo. La solución exige desacoplar el cálculo pesado, precomputar los vectores de las películas y emplear paralelismo multihilo y vectorización en CPU para responder en pocos milisegundos.
 \end{enumerate}
 
-\subsection{Formulación Matemática del Objetivo}
-Sea $\mathcal{U}$ el conjunto de usuarios con cardinalidad $|\mathcal{U}| = N$ y $\mathcal{I}$ el inventario de películas con cardinalidad $|\mathcal{I}| = M$. El espacio de interacciones se formaliza como una matriz dispersa $\mathbf{R} \in \mathbb{R}^{N \times M}$, donde cada elemento $r_{ui} \in [0.5, 5.0]$ representa una valoración explícita o la ausencia de interacción ($r_{ui} = \emptyset$).
+\subsection{Objetivo del Sistema}
+En lugar de plantear una regresión para predecir la nota exacta de cada película, el sistema se enfoca como un problema de \textbf{Aprendizaje de Ordenamiento (\textit{Learning to Rank}) y Recuperación Top-$K$}. 
 
-El objetivo no radica en una regresión puntual para estimar valores numéricos de notas individuales, sino en un problema de \textbf{Aprendizaje de Ordenamiento (\textit{Learning to Rank}) y Recuperación Top-$K$}. El sistema debe proyectar usuarios e ítems a un espacio latente métrico compartido $\mathbb{R}^d$ ($d \ll M$), produciendo una puntuación de afinidad $\hat{s}(u, i)$ que ordene las preferencias relativas:
+Formalmente, el sistema proyecta tanto al usuario $u$ como a cada película $i$ a un espacio métrico latente compartido $\mathbb{R}^d$ ($d \ll M$). A partir de estas representaciones se calcula una puntuación de afinidad $\hat{s}(u, i)$ para ordenar el catálogo, asegurando que las obras relevantes para el usuario ($\mathcal{I}_u^+$) se sitúen por delante del resto del inventario no observado o irrelevante:
 \begin{equation}
     \hat{s}(u, i) > \hat{s}(u, j) \quad \forall \, i \in \mathcal{I}_u^+, \; j \in \mathcal{I} \setminus \mathcal{I}_u^+
     \label{eq:ranking_obj}
 \end{equation}
-donde $\mathcal{I}_u^+$ denota el conjunto de obras con afinidad positiva para el usuario y $\mathcal{I} \setminus \mathcal{I}_u^+$ representa el catálogo no observado o irrelevante.
+
+El propósito final es devolver una selección reducida, diversa y personalizada de películas en tiempo real, ahorrando tiempo de búsqueda al espectador.
 
 \begin{figure}[!htbp]
     \centering
@@ -159,7 +169,6 @@ donde $\mathcal{I}_u^+$ denota el conjunto de obras con afinidad positiva para e
     \caption{Esquema conceptual del problema: integración de datos masivos y heterogéneos, modelado desacoplado y pipeline de inferencia eficiente en dos fases.}
     \label{fig:diagrama_problema}
 \end{figure}
-
 % ==========================================
 % SECCIÓN 2: FUENTES DE DATOS
 % ==========================================
@@ -185,10 +194,10 @@ Para abordar simultáneamente el modelado colaborativo, el arranque en frío y e
 \end{table}
 
 \subsection{MovieLens 32M: Núcleo Cuantitativo Colaborativo}
-Publicado por GroupLens Research en su versión oficial más exhaustiva \cite{movielens}, recoge el comportamiento continuado de usuarios hasta octubre de 2023[cite: 29]. Proporciona:
+Publicado por GroupLens Research en su versión oficial más exhaustiva \cite{movielens}, recoge el comportamiento continuado de usuarios hasta octubre de 2023. Proporciona:
 \begin{itemize}
-    \item \textbf{\texttt{ratings.csv}} ($\approx 700$ MB): Registros estructurados en cuádruplas $(\text{userId}, \text{movieId}, \text{rating}, \text{timestamp})$[cite: 29]. Las calificaciones abarcan una escala ordinal de 10 niveles discretos (de 0.5 a 5.0 con incrementos de 0.5 estrellas)[cite: 36, 41].
-    \item \textbf{\texttt{links.csv}}: Tabla relacional fundamental que asocia el identificador interno \texttt{movieId} con las claves de \texttt{imdbId} y \texttt{tmdbId}, actuando como puente de enlace hacia la información semántica[cite: 41, 43].
+    \item \textbf{\texttt{ratings.csv}} ($\approx 700$ MB): Registros estructurados en cuádruplas $(\text{userId}, \text{movieId}, \text{rating}, \text{timestamp})$. Las calificaciones abarcan una escala ordinal de 10 niveles discretos (de 0.5 a 5.0 con incrementos de 0.5 estrellas).
+    \item \textbf{\texttt{links.csv}}: Tabla relacional fundamental que asocia el identificador interno \texttt{movieId} con las claves de \texttt{imdbId} y \texttt{tmdbId}, actuando como puente de enlace hacia la información semántica.
 \end{itemize}
 
 \subsection{Análisis Empírico de la Distribución de Datos}
@@ -239,37 +248,46 @@ Para validar el sistema en un entorno real de explotación, se adopta el esquema
 % ==========================================
 % SECCIÓN 3: ESTADO DEL ARTE
 % ==========================================
-\section{Estado del Arte y Revisión Bibliográfica}
+\section{Estado del Arte y Soluciones Habituales}
 
-La literatura en sistemas de recomendación abarca múltiples paradigmas formales, cada uno con compromisos computacionales y de expresividad diferenciados frente a grandes catálogos:
+Para entender cómo abordar el catálogo de MovieLens y TMDB sin incurrir en cuellos de botella de memoria o latencia, revisamos las soluciones más representativas utilizadas en la literatura y en la industria:
 
-\subsection{Taxonomía de Soluciones Previas}
+\subsection{¿Qué se hace habitualmente? Enfoques y Casos Reales}
 \begin{enumerate}
-    \item \textbf{Factorización Matricial Clásica (SVD / ALS):} Popularizada durante el \textit{Netflix Prize} \cite{koren2009}, descompone la matriz observada en factores latentes lineales $\mathbf{R} \approx \mathbf{P}\mathbf{Q}^\top$ mediante Mínimos Cuadrados Alternados[cite: 13, 14, 15]. Aunque es computable de forma multihilo[cite: 15], su carácter estrictamente lineal le impide asimilar descripciones textuales o atributos densos, fracasando completamente ante el arranque en frío.
-    \item \textbf{Autoencoders Lineales Analíticos (EASE$^R$):} Propuesto por Steck \cite{steck2019}, aprende una matriz de pesos ítem-ítem $\mathbf{B}$ con diagonal nula mediante una solución exacta en forma cerrada. No obstante, exige invertir la matriz de Gram $\mathbf{G} = \mathbf{X}^\top\mathbf{X} + \lambda \mathbf{I}$, cuya complejidad temporal es $\mathcal{O}(M^3)$ y espacial $\mathcal{O}(M^2)$. Para el catálogo de MovieLens ($M \approx 84\,000$), almacenar dicha matriz requeriría más de 28 GB de memoria RAM para la inversión, resultando inviable en procesadores convencionales y sin soporte para ítems nuevos.
-    \item \textbf{Autoencoders Variacionales Bayesianos (Multi-VAE):} Introducido por Liang et al. \cite{liang2018}, modela las preferencias como un proceso generativo con verosimilitud multinomial. Aunque ofrece excelente precisión en ranking, la capa de normalización softmax sobre el catálogo completo penaliza la latencia de inferencia sin GPUs dedicadas.
-    \item \textbf{Factorización Neuronal Colaborativa (NCF / NeuMF):} Diseñado por He et al. \cite{he2017}, combina un producto de Hadamard con un perceptrón multicapa (MLP) para capturar no linealidades complejas[cite: 21]. Sin embargo, su cuello de botella operativo es crítico: las capas densas acopladas impiden precomputar representaciones independientes. Cada recomendación exige evaluar la red completa contra cada filme ($\mathcal{O}(M \cdot C_{\text{MLP}})$), haciendo prohibitiva la respuesta en milisegundos.
-    \item \textbf{Modelos Secuenciales con Auto-Atención (SASRec):} Kang y McAuley \cite{kang2018} modelan secuencias temporales mediante transformadores unidireccionales. Destacan capturando dependencias dinámicas, pero su coste computacional cuadrático $\mathcal{O}(L^2 d)$ respecto a la longitud de sesión desvía el foco de la recuperación eficiente sobre catálogo masivo.
-    \item \textbf{Redes Neuronales sobre Grafos (LightGCN):} He et al. \cite{he2020} simplifican la convolución de grafos a difusión lineal sobre la matriz de adyacencia bipartita. Aunque maximiza el aprovechamiento estructural, su alta huella de memoria para el grafo y el acceso disperso a punteros complican la vectorización uniforme en CPU.
-    \item \textbf{Arquitecturas de Dos Torres y Recuperación Industrial:} Introducidas por Covington et al. \cite{covington2016} y formalizadas por Yi et al. \cite{yi2019}, desacoplan al usuario y al ítem en torres neuronales diferenciadas[cite: 20, 21]. La inferencia se reduce a un producto escalar en espacio continuo, resolviendo la búsqueda mediante algoritmos de Vecinos Más Cercanos Aproximados (\textit{ANN}) en tiempo sublineal $\mathcal{O}(\log M)$.
-    \item \textbf{Diversificación y Reordenamiento con MMR:} Carbonell y Goldstein \cite{carbonell1998} formularon el criterio de Relevancia Marginal Máxima (\textit{Maximal Marginal Relevance}), balanceando afinidad del usuario con novedad temática intra-lista para evitar listas redundantes.
+    \item \textbf{Factorización Matricial (SVD / ALS) --- Caso Netflix Prize:}
+    Popularizado por Koren et al. \cite{koren2009} durante la célebre competición del \textit{Netflix Prize}. Funciona bien descomponiendo la matriz de valoraciones numéricas en factores latentes, pero es un modelo estrictamente colaborativo: ignora por completo el texto de las sinopsis de TMDB y no puede recomendar nada a un usuario nuevo sin historial previo (\textit{cold-start}).
+
+    \item \textbf{Autoencoders Lineales (EASE$^R$) --- Caso Harald Steck (Netflix):}
+    Propuesto por Harald Steck \cite{steck2019} en Netflix y muy utilizado como solución de referencia en competiciones de Kaggle por su precisión inmediata. Su gran inconveniente con nuestro catálogo es de memoria: exige calcular e invertir una matriz de tamaño catálogo $\times$ catálogo ($M \times M$). Con más de $84\,000$ películas, almacenar dicha matriz requiere más de 28~GB de memoria RAM, haciendo inviable su ejecución en un ordenador convencional.
+
+    \item \textbf{Redes Neuronales Acopladas (NeuMF / NCF):}
+    Introducido por He et al. \cite{he2017}, combina vectores latentes con capas densas no lineales. Aunque es un referente académico, en producción presenta un cuello de botella crítico: para recomendar películas debe pasar al usuario y al ítem juntos por toda la red. Evaluar esa red neuronal $84\,000$ veces por cada usuario en tiempo real destruye cualquier posibilidad de respuesta interactiva rápida.
+
+    \item \textbf{Modelos sobre Grafos (LightGCN):}
+    Propuesto por He et al. \cite{he2020}, modela usuarios y películas como nodos interconectados de un grafo bipartito. Si bien captura muy bien la estructura comunitaria, mantener millones de aristas dispersas en memoria dificulta una paralelización limpia y vectorizada en CPU bajo recursos limitados.
+
+    \item \textbf{Arquitectura de Dos Torres (\textit{Two-Tower}) --- Caso YouTube / Google:}
+    Diseñada por Covington et al. \cite{covington2016} y formalizada por Yi et al. \cite{yi2019} para el motor de recomendaciones a gran escala de YouTube. Separa el sistema en dos ramas independientes: una procesa al usuario y otra los metadatos de las películas. Esto permite precomputar los vectores de todo el catálogo una sola vez y resolver la búsqueda en milisegundos mediante índices vectoriales rápidos en memoria RAM (como FAISS de Meta).
+
+    \item \textbf{Diversificación con MMR --- Caso Motores de Búsqueda y Noticias:}
+    Formulado originalmente por Carbonell y Goldstein \cite{carbonell1998}, es el estándar para evitar que la lista final sea monótona o redundante (por ejemplo, recomendar cinco secuelas de la misma saga), reequilibrando afinidad con variedad temática y cine de nicho.
 \end{enumerate}
 
 \begin{table}[!htbp]
     \centering
-    \footnotesize
-    \setlength{\tabcolsep}{4.5pt}
-    \caption{Comparativa analítica de paradigmas frente a los criterios del proyecto.}
+    \small
+    \setlength{\tabcolsep}{5pt}
+    \caption{Comparativa práctica de paradigmas frente a las restricciones del proyecto.}
     \label{tab:comparativa_modelos}
-    \begin{tabularx}{\textwidth}{p{2.3cm} p{1.9cm} p{2.1cm} c X p{2.6cm}}
+    \begin{tabularx}{\textwidth}{p{2.6cm} p{3.2cm} c X c}
         \toprule
-        \textbf{Paradigma} & \textbf{Inferencia Top-$K$} & \textbf{Consumo Memoria} & \textbf{Cold-Start} & \textbf{Metadatos} & \textbf{Idoneidad CPU} \\ 
+        \textbf{Enfoque} & \textbf{Referencia / Caso Real} & \textbf{Cold-Start} & \textbf{Metadatos (TMDB)} & \textbf{Viabilidad en CPU} \\ 
         \midrule
-        \textbf{SVD / ALS} \cite{koren2009} & $\mathcal{O}(M \cdot d)$ & $\mathcal{O}((N+M)d)$ & Nulo & Limitada & Alta (BLAS multihilo)[cite: 13, 15] \\
-        \textbf{EASE$^R$} \cite{steck2019} & $\mathcal{O}(|I_u|M)$ & $\mathcal{O}(M^2)$ (Crítico) & Nulo & Incompatible & Baja (inversión $\mathcal{O}(M^3)$) \\
-        \textbf{NeuMF} \cite{he2017} & $\mathcal{O}(M \cdot C_{\text{MLP}})$ & $\mathcal{O}((N+M)d)$ & Moderado & Posible & Muy baja (MLP acoplado)[cite: 21] \\
-        \textbf{LightGCN} \cite{he2020} & $\mathcal{O}(d \log M)$ & $\mathcal{O}((N+M)d + |\mathbf{A}|)$ & Bajo & Homogéneo & Media (acceso disperso) \\
-        \textbf{Two-Tower} \cite{yi2019} & $\mathcal{O}(d \log M)$ (ANN) & $\mathcal{O}((N+M)d)$ & \textbf{Excelente} & \textbf{Nativa y flexible} & \textbf{Sobresaliente (SIMD/OMP)}[cite: 21, 24] \\ 
+        \textbf{SVD / ALS} & Netflix Prize \cite{koren2009} & Nulo & No compatible (solo notas) & Alta (lineal) \\
+        \textbf{EASE$^R$} & Harald Steck (Netflix) \cite{steck2019} & Nulo & No compatible & Inviable ($>28$ GB RAM) \\
+        \textbf{NeuMF} & He et al. \cite{he2017} & Bajo & Posible pero costoso & Muy lenta en tiempo real \\
+        \textbf{LightGCN} & He et al. \cite{he2020} & Bajo & Requiere grafos complejos & Media (acceso disperso) \\
+        \textbf{Two-Tower} & YouTube / Google \cite{yi2019} & \textbf{Excelente} & \textbf{Nativo (texto y géneros)} & \textbf{Óptima (SIMD / FAISS)} \\ 
         \bottomrule
     \end{tabularx}
 \end{table}
@@ -279,45 +297,46 @@ La literatura en sistemas de recomendación abarca múltiples paradigmas formale
 % ==========================================
 \section{Justificación Tecnológica del Enfoque Propuesto}
 
-A partir del análisis de datos y la revisión de la literatura, se justifica la adopción de una **estrategia híbrida en dos etapas desacopladas** (Figura \ref{fig:arquitectura_two_tower}):
+Para responder a las limitaciones observadas en los datos (dispersión del $99.8\%$, arranque en frío y concentración del $95.70\%$ en superventas) garantizando respuesta en milisegundos en CPU, se propone un flujo en **dos etapas desacopladas** (Figura \ref{fig:arquitectura_two_tower}):
 
 \begin{figure}[!htbp]
     \centering
-    \includegraphics[width=0.80\textwidth]{arquitectura_two_tower.png}
+    \includegraphics[width=0.60\textwidth]{arquitectura_two_tower_Mv.png}
     \caption{Arquitectura propuesta: desacoplamiento en dos etapas (Recuperación Two-Tower con búsqueda vectorial ANN y Reordenamiento con diversificación MMR).}
     \label{fig:arquitectura_two_tower}
 \end{figure}
 
-\subsection{Justificación de la Arquitectura Two-Tower (Etapa 1)}
-Para satisfacer la restricción de catálogo masivo ($84\,000$ títulos) y tiempos de respuesta interactivos sin GPU, la red desacopla totalmente las dos entidades[cite: 20, 21]:
+\subsection{Etapa 1: Recuperación Rápida con Red de Dos Torres (\textit{Two-Tower})}
+El modelo separa la representación del usuario y de las películas en dos redes independientes que proyectan a un espacio común de dimensión $d = 128$:
 \begin{equation}
-    \hat{s}(u, i) = \langle \mathbf{u}, \mathbf{v}_i \rangle = \Psi_U(\mathbf{x}_u)^\top \Psi_I(\mathbf{x}_i), \quad \mathbf{u}, \mathbf{v}_i \in \mathbb{R}^{128}
+    \hat{s}(u, i) = \langle \mathbf{u}, \mathbf{v}_i \rangle = \Psi_U(\mathbf{x}_u)^\top \Psi_I(\mathbf{x}_i)
     \label{eq:two_tower}
 \end{equation}
-\begin{itemize}
-    \item \textbf{Resolución del Arranque en Frío:} La Torre de Ítem proyecta sinopsis (vía embeddings de \textit{SentenceTransformers}) y codificaciones Multi-Hot de directores y géneros. Para un título recién estrenado sin calificaciones previas, el vector $\mathbf{v}_i$ se calcula directamente a partir de sus metadatos.
-    \item \textbf{Inferencia Logarítmica:} Al ser un producto escalar, los vectores de todas las películas se precomputan offline e indexan en memoria RAM mediante estructuras de grafos jerárquicos navegables (\textit{HNSW})[cite: 21, 24]. La recuperación de los $K_c = 200$ candidatos principales se resuelve en $\mathcal{O}(d \log M)$ con latencia inferior a 5 ms[cite: 21].
-    \item \textbf{Mitigación del Sesgo de Popularidad:} Inspirado en Yi et al. \cite{yi2019}, el entrenamiento contrarresta la concentración empírica del $95.70\%$ corrigiendo las puntuaciones contrastivas mediante la probabilidad marginal del ítem: $s^*(u, i) = \mathbf{u}^\top \mathbf{v}_i - \tau \log P(i)$, donde $P(i) \propto n_i^{0.75}$ penaliza la sobreexposición artificial de superventas[cite: 22, 23].
-\end{itemize}
 
-\subsection{Justificación del Reordenamiento con MMR (Etapa 2)}
-La primera etapa prioriza relevancia global. Para combatir la redundancia y rescatar obras de autor de la cola larga, la segunda etapa refina la lista final ($K=20$) aplicando Relevancia Marginal Máxima \cite{carbonell1998}:
+Esta separación resuelve tres problemas clave del catálogo:
+\begin{enumerate}
+    \item \textbf{Arranque en frío resuelto por metadatos:} La Torre de Ítem ($\Psi_I$) genera el vector $\mathbf{v}_i$ combinando sinopsis textuales (vía \textit{SentenceTransformers}) con directores y géneros de TMDB. Una película recién estrenada sin votos obtiene una representación válida de inmediato.
+    \item \textbf{Inferencia en milisegundos sobre 84\,000 películas:} Los vectores $\mathbf{v}_i$ de todo el catálogo se precomputan offline y se indexan en RAM (apenas 43~MB). En tiempo real solo se evalúa la Torre de Usuario ($\Psi_U$) para obtener $\mathbf{u}$ y extraer los $K_c = 200$ títulos más afines en menos de 5~ms mediante búsqueda vectorial aproximada (\textit{HNSW}).
+    \item \textbf{Mitigación del sesgo de popularidad (LogQ):} Durante el entrenamiento contrastivo, se resta la probabilidad marginal de aparición del filme ($s^* = \mathbf{u}^\top \mathbf{v}_i - \tau \log P(i)$) según Yi et al. \cite{yi2019}. Esto evita que los títulos comerciales acaparen artificialmente las recomendaciones.
+\end{enumerate}
+
+\subsection{Etapa 2: Diversificación y Descubrimiento con MMR}
+La primera etapa prioriza relevancia pura, lo que suele devolver películas muy similares entre sí (por ejemplo, varias entregas de la misma saga). Para introducir variedad y rescatar cine de calidad de la cola larga, se aplica Relevancia Marginal Máxima \cite{carbonell1998} sobre los 200 candidatos:
 \begin{equation}
-    i^* = \arg\max_{i \in \mathcal{C} \setminus \mathcal{S}} \left[ \lambda \cdot \text{Score}_{\text{recup}}(u, i) - (1 - \lambda) \max_{j \in \mathcal{S}} \text{Sim}(\mathbf{v}_i, \mathbf{v}_j) \right]
+    i^* = \arg\max_{i \in \mathcal{C} \setminus \mathcal{S}} \left[ \lambda \cdot \text{Score}(u, i) - (1 - \lambda) \max_{j \in \mathcal{S}} \text{Sim}(\mathbf{v}_i, \mathbf{v}_j) \right]
     \label{eq:mmr}
 \end{equation}
-fijando $\lambda \in [0.65, 0.75]$. Este mecanismo garantiza diversidad genérica y estilística dentro de la lista entregada al usuario.
+Fijando $\lambda \approx 0.7$, el algoritmo equilibra afinidad personal y novedad temática, produciendo la lista final de $K = 20$ recomendaciones.
 
 % ==========================================
 % SECCIÓN 5: PLAN DE COMPUTACIÓN PARALELA
 % ==========================================
 \section{Plan de Computación Paralela y Optimización HPC (CPIA)}
 
-El diseño traslada el cuello de botella computacional a rutinas numéricas ideales para explotación paralela en arquitecturas CPU multinúcleo comerciales:
+El diseño traslada el cómputo crítico a operaciones vectoriales continuas en CPU, ideales para explotación multihilo y vectorización:
 
-\textbf{1. Paralelización con OpenMP en C/C++:}
-El cálculo simultáneo de perfiles de usuario y el cálculo masivo de afinidades y re-ranking sobre los candidatos recuperados se implementará mediante bucles paralelizados con balanceo de carga dinámico \cite{openmp}:
-
+\begin{enumerate}
+    \item \textbf{Paralelización multihilo con OpenMP en C/C++:} El cálculo concurrente de perfiles de usuario y la evaluación masiva de similitudes se distribuirá entre núcleos con balanceo dinámico \cite{openmp}:
 \begin{lstlisting}
 #pragma omp parallel for schedule(dynamic, 64)
 for (int u = 0; u < num_usuarios; ++u) {
@@ -325,18 +344,18 @@ for (int u = 0; u < num_usuarios; ++u) {
     evaluar_similitudes_simd(&usuarios[u], candidatos, top_k);
 }
 \end{lstlisting}
-
-\textbf{2. Vectorización SIMD (AVX2 / AVX-512):}
-Dado que los vectores de usuario e ítem poseen dimensión fija ($d = 128$), el producto interno $\langle \mathbf{u}, \mathbf{v}_i \rangle$ se optimizará alineando memoria a 32/64 bytes e invocando instrucciones intrínsecas FMA (\textit{Fused Multiply-Add}), ejecutando hasta 8 o 16 operaciones float por ciclo por núcleo.
-
-\textbf{3. Plan de Evaluación de Escalabilidad:}
-En las entregas posteriores se evaluará experimentalmente el \textit{Speedup} $S_p = T_1 / T_p$ y la eficiencia paralela $E_p = S_p / p$ para $p \in \{1, 2, 4, 8, 16\}$ hilos, modelando el techo teórico mediante la Ley de Amdahl.
+    \item \textbf{Vectorización SIMD (AVX2 / AVX-512):} Dado que los embeddings tienen tamaño fijo ($d = 128$), los productos escalares $\langle \mathbf{u}, \mathbf{v}_i \rangle$ se optimizarán en memoria alineada usando instrucciones intrínsecas FMA (8 a 16 operaciones float por ciclo por núcleo).
+    \item \textbf{Evaluación de escalabilidad:} En las siguientes entregas se medirá el \textit{Speedup} experimental $S_p = T_1 / T_p$ y la eficiencia para $p \in \{1, 2, 4, 8, 16\}$ hilos frente a la cota teórica de la Ley de Amdahl.
+\end{enumerate}
 
 % ==========================================
 % SECCIÓN 6: CONCLUSIONES
 % ==========================================
-\section{Conclusiones}
-La propuesta presentada delimita con precisión el problema derivado de la esparcidad masiva y la extrema concentración de popularidad en MovieLens 32M ($95.70\%$ en el Top 10\%). La integración relacional de TMDB permite enriquecer semánticamente el catálogo para mitigar el arranque en frío. La arquitectura desacoplada en dos fases (Two-Tower y MMR) fundamenta teóricamente la viabilidad del proyecto, garantizando un consumo acotado de memoria y estableciendo una base idónea para la implementación de paralelismo en C/C++ con OpenMP y vectorización SIMD.
+\section{Conclusiones y Próximos Pasos}
+
+Esta propuesta establece la viabilidad técnica del motor de recomendación tras caracterizar empíricamente los retos de MovieLens 32M (dispersión del $99.81\%$ y el $95.70\%$ de interacciones concentradas en solo el $10\%$ del catálogo). La integración con los metadatos de TMDB y el formato de Letterboxd proporciona el contexto necesario para superar el arranque en frío en un entorno real.
+
+La arquitectura Two-Tower complementada con reordenamiento MMR ofrece el equilibrio óptimo para el proyecto: desacopla el cálculo pesado, acota el uso de memoria RAM a decenas de megabytes y traslada las operaciones críticas a rutinas de álgebra vectorial idóneas para su implementación paralela en C++ con OpenMP y SIMD. En la próxima entrega (E2) se abordará el pipeline de preprocesamiento, la generación de embeddings y el desarrollo de los benchmarks de rendimiento en CPU.
 
 % ==========================================
 % BIBLIOGRAFÍA
@@ -347,10 +366,10 @@ La propuesta presentada delimita con precisión el problema derivado de la espar
 \setlength{\parskip}{0pt}
 
 \bibitem{movielens}
-Harper, F. M., \& Konstan, J. A. (2015). \textit{The MovieLens Datasets: History and Context}. ACM Transactions on Interactive Intelligent Systems (TiiS), 5(4), 1--19[cite: 29].
+Harper, F. M., \& Konstan, J. A. (2015). \textit{The MovieLens Datasets: History and Context}. ACM Transactions on Interactive Intelligent Systems (TiiS), 5(4), 1--19.
 
 \bibitem{koren2009}
-Koren, Y., Bell, R., \& Volinsky, C. (2009). \textit{Matrix Factorization Techniques for Recommender Systems}. IEEE Computer, 42(8), 30--37[cite: 12].
+Koren, Y., Bell, R., \& Volinsky, C. (2009). \textit{Matrix Factorization Techniques for Recommender Systems}. IEEE Computer, 42(8), 30--37.
 
 \bibitem{covington2016}
 Covington, P., Adams, J., \& Sargin, E. (2016). \textit{Deep Neural Networks for YouTube Recommendations}. Proceedings of the 10th ACM Conference on Recommender Systems (RecSys '16), 191--198.
@@ -368,7 +387,7 @@ Kang, W. C., \& McAuley, J. (2018). \textit{Self-Attentive Sequential Recommenda
 Steck, H. (2019). \textit{Embarrassingly Shallow Autoencoders for Sparse Data}. Proceedings of the World Wide Web Conference (WWW '19), 3251--3257.
 
 \bibitem{yi2019}
-Yi, X., Yang, J., Hong, L., Cheng, D. Z., Heldt, L., Kumthekar, A., Zhao, Z., Wei, L., \& Chi, E. (2019). \textit{Sampling-Bias-Corrected Neural Modeling for Large Corpus Item Recommendations}. Proceedings of the 13th ACM Conference on Recommender Systems (RecSys '19), 269--277[cite: 20].
+Yi, X., Yang, J., Hong, L., Cheng, D. Z., Heldt, L., Kumthekar, A., Zhao, Z., Wei, L., \& Chi, E. (2019). \textit{Sampling-Bias-Corrected Neural Modeling for Large Corpus Item Recommendations}. Proceedings of the 13th ACM Conference on Recommender Systems (RecSys '19), 269--277.
 
 \bibitem{he2020}
 He, X., Deng, K., Wang, X., Li, Y., Zhang, Y., \& Wang, M. (2020). \textit{LightGCN: Simplifying and Powering Graph Convolution Network for Recommendation}. Proceedings of the 43rd International ACM SIGIR Conference, 639--648.
