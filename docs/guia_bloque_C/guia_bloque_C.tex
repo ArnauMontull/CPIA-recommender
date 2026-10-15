@@ -1,0 +1,678 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[spanish,es-nodecimaldot,es-noshorthands]{babel}
+\usepackage{amsmath, amssymb, mathtools}
+\usepackage[left=2.3cm,right=2.3cm,top=2.3cm,bottom=2.3cm]{geometry}
+\usepackage{microtype}
+\usepackage{parskip}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage[most]{tcolorbox}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue!60!black, urlcolor=blue!60!black, citecolor=green!45!black}
+
+\addto\captionsspanish{\renewcommand{\tablename}{Tabla}}
+\setlist{itemsep=2pt, topsep=3pt}
+\renewcommand{\arraystretch}{1.18}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\newtcolorbox{idea}[1][Idea clave]{colback=blue!4, colframe=blue!45!black, fonttitle=\bfseries, title=#1, boxrule=0.6pt, arc=2pt}
+\newtcolorbox{ojo}[1][Ojo]{colback=orange!6, colframe=orange!70!black, fonttitle=\bfseries, title=#1, boxrule=0.6pt, arc=2pt}
+\newtcolorbox{ejemplo}[1][Ejemplo]{colback=green!4, colframe=green!40!black, fonttitle=\bfseries, title=#1, boxrule=0.6pt, arc=2pt}
+\newcommand{\rec}{\ensuremath{\star}}
+\newcommand{\pos}{\ensuremath{\mathcal{P}}}
+
+\title{\textbf{Qué significa «le gusta»}\\[4pt]
+\large Guía para responder al bloque C (señal objetivo) del recomendador de CPIA}
+\author{Arnau Montull \quad para \quad Uriel Martínez}
+\date{15 de octubre de 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent Esta guía reúne todo lo necesario para decidir cómo convertimos las notas de MovieLens en la señal con la
+que se entrena la Two-Tower: feedback explícito e implícito, pérdida contrastiva, negativos del lote, corrección logQ,
+umbrales, sesgo de cada usuario, pesos, métricas y el problema de la fuga de información. Cada concepto viene con un
+ejemplo y con las cifras que hemos medido en nuestra submuestra de desarrollo (3\,154\,155 ratings, 20\,085 usuarios).
+Al final están las 14 preguntas (C1--C14) con sus opciones y mi recomendación (\rec), que \emph{no} es una decisión.
+Los números salen de \texttt{python -m src.analisis.senal\_objetivo} (\texttt{reports/senal\_objetivo.md}) y la versión
+corta del planning está en \texttt{docs/planning\_bloque\_C.md}.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% =====================================================================
+\section{Dónde estamos y qué se decide aquí}
+% =====================================================================
+
+\subsection{Lo ya decidido (bloques A y B)}
+\begin{itemize}
+  \item \textbf{Datos}: solo \texttt{ml-32m/ratings.csv} (1995--2023). De Kaggle/TMDB solo usamos metadatos.
+  \item \textbf{Limpieza}: fuera las películas con menos de 20 ratings (se pierde el 0,86\,\% de los ratings); quedan
+        31\,725\,154 ratings, 200\,948 usuarios y 23\,335 películas. Duplicados (mismo \texttt{tmdbId}) fusionados.
+        Sinopsis para el 99,4\,\% de las películas.
+  \item \textbf{Submuestra de desarrollo}: el 10\,\% de los usuarios (enteros), estratificada. Todo lo de esta guía
+        está medido ahí; los resultados finales se harán con el conjunto completo.
+  \item Pendiente: B3 (géneros de MovieLens o de TMDB).
+\end{itemize}
+
+\subsection{La arquitectura que prometimos en E1}
+\begin{center}
+\begin{tikzpicture}[node distance=5mm and 9mm, every node/.style={font=\small},
+  caja/.style={draw, rounded corners=2pt, align=center, minimum height=9mm, fill=#1},
+  caja/.default=white, flecha/.style={-{Stealth[length=2.2mm]}, thick}]
+  \node[caja=blue!8] (hist) {Historial del usuario\\(notas)};
+  \node[caja=blue!18, right=of hist] (tu) {Torre de usuario\\$\Psi_U$};
+  \node[caja=green!8, below=12mm of hist] (meta) {Sinopsis, géneros,\\director};
+  \node[caja=green!18, right=of meta] (ti) {Torre de ítem\\$\Psi_I$};
+  \node[caja=orange!12, right=14mm of tu, yshift=-10.5mm] (dot) {$\langle \mathbf{u}, \mathbf{v}_i\rangle$\\+ ANN (HNSW)};
+  \node[caja=orange!22, right=of dot] (mmr) {200 candidatos\\$\rightarrow$ MMR $\rightarrow$ 20};
+  \draw[flecha] (hist) -- (tu); \draw[flecha] (meta) -- (ti);
+  \draw[flecha] (tu) -- node[above, sloped]{$\mathbf{u}$} (dot); \draw[flecha] (ti) -- node[below, sloped]{$\mathbf{v}_i$} (dot);
+  \draw[flecha] (dot) -- (mmr);
+  \node[above=1mm of hist, font=\footnotesize\itshape, text=red!60!black] {aquí entra el bloque C};
+\end{tikzpicture}
+\end{center}
+
+En E1 escribimos, para MovieLens: «\emph{binarización implícita ponderada por $r_{ui}$} $\rightarrow$ torre de usuario»,
+y para el entrenamiento: «contrastivo con corrección logQ». El bloque C decide qué quiere decir exactamente eso.
+
+\subsection{Qué decide el bloque C}
+\begin{itemize}
+  \item \textbf{Qué aprende el modelo}: ¿predecir la nota o distinguir lo que gusta de lo que no?
+  \item \textbf{Qué es un positivo}: ¿a partir de qué nota decimos «le gusta»? ¿Igual para todos los usuarios?
+  \item \textbf{Qué hacemos con lo que no gusta} y \textbf{cuánto pesa} cada positivo y cada usuario.
+  \item \textbf{Cómo se mide} si el modelo acierta, y cómo afecta todo eso a logQ y a los negativos.
+\end{itemize}
+
+\begin{ojo}[Tres bloques que van juntos]
+El bloque C no se puede cerrar del todo solo. El \textbf{D} (cómo partimos train/validación/test) decide qué positivos
+hay en test y con qué datos se calcula todo lo «por usuario». El \textbf{F} (torre de usuario) decide si $\mathbf{u}$
+sale de un identificador o del historial; en el segundo caso, la definición de positivo decide también qué entra en
+ese historial. Por eso proponemos cerrar \textbf{C1, D1 y F1 a la vez}.
+\end{ojo}
+
+% =====================================================================
+\section{Los datos que tenemos: notas explícitas}
+% =====================================================================
+
+\subsection{Explícito frente a implícito}
+\begin{itemize}
+  \item \textbf{Feedback explícito}: el usuario dice cuánto le gustó (MovieLens: de 0,5 a 5 estrellas en pasos de 0,5).
+  \item \textbf{Feedback implícito}: solo sabemos que \emph{hizo algo} (vio, clicó, compró). No hay «no me gustó»; lo que
+        no aparece puede ser que no le interese o que no lo conozca. Es lo que tienen YouTube o Spotify, y para lo que se
+        diseñaron la Two-Tower y logQ \cite{hu2008,rendle2009,covington2016,yi2019}.
+\end{itemize}
+
+Nosotros tenemos explícito, pero lo vamos a usar \emph{como si fuera implícito} («binarizar»): convertir cada nota en
+«positivo» o «no positivo». La razón es que lo que queremos es \textbf{ordenar} un catálogo de 23\,335 películas y
+quedarnos con las 200 mejores, no adivinar la nota exacta.
+
+\subsection{Los datos no faltan al azar}
+Un usuario no puntúa películas al azar: puntúa las que eligió ver, y elige las que espera que le gusten. Por eso hay
+muchas más notas altas que bajas y una película sin nota \emph{no} es una película que no le gusta. A esto se le llama
+datos \emph{missing not at random} (MNAR) \cite{marlin2009}.
+
+\begin{center}
+\begin{tabular}{lrrrrrrrrrr}
+\toprule
+Nota & 0,5 & 1,0 & 1,5 & 2,0 & 2,5 & 3,0 & 3,5 & 4,0 & 4,5 & 5,0 \\
+\midrule
+\% ratings & 1,7 & 3,0 & 1,6 & 6,3 & 5,1 & 18,9 & 13,3 & 26,3 & 9,2 & 14,5 \\
+\bottomrule
+\end{tabular}
+\end{center}
+La nota media es 3,54; el 63\,\% de las notas son $\ge 3{,}5$ y el 50\,\% son $\ge 4{,}0$.
+
+\subsection{Cada usuario usa la escala a su manera}
+\begin{center}
+\begin{tabular}{lrrrrr}
+\toprule
+ & p5 & p25 & p50 & p75 & p95 \\
+\midrule
+Media de cada usuario & 2,90 & 3,42 & 3,73 & 4,03 & 4,46 \\
+Desviación típica de cada usuario & 0,51 & 0,73 & 0,89 & 1,07 & 1,37 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\begin{itemize}
+  \item El 27,4\,\% de los usuarios tiene media $\ge 4{,}0$ (para ellos un 4 es «normal») y el 6,9\,\% tiene media $< 3{,}0$
+        (para ellos un 3,5 es un elogio).
+  \item 30 usuarios ponen siempre la misma nota; 904 (4,5\,\%) tienen desviación $< 0{,}5$.
+  \item Los usuarios que puntúan mucho son algo más duros: correlación $-0{,}19$ entre $\log(\text{nº de ratings})$ y la media.
+\end{itemize}
+
+\subsection{Las medias estrellas no existían antes de 2003}
+MovieLens solo tenía estrellas enteras hasta 2003 \cite{harper2015} (en nuestros datos el primer 0,5 aparece ese año). El 24,3\,\% de los
+ratings es anterior, y el 34,3\,\% de los usuarios nunca usa medias estrellas. Para todos ellos, «$\ge 3{,}5$» y
+«$\ge 4{,}0$» son exactamente lo mismo, y el 3 mezcla «estuvo bien» con «regular».
+
+\subsection{Mucha gente lo puntúa todo el primer día}
+\begin{itemize}
+  \item El \textbf{62,5\,\%} de los ratings se hace en las primeras 24\,h del usuario, y el \textbf{59\,\%} de los usuarios
+        hace \emph{todas} sus valoraciones ese primer día.
+  \item El 22,3\,\% de los ratings comparte el segundo exacto con otro del mismo usuario (no hay orden entre ellos).
+  \item El primer día se puntúa más alto: media 3,60 frente a 3,44; $\ge 4$ el 53\,\% frente al 45\,\%.
+\end{itemize}
+Es decir: la mayoría de las notas son \emph{recuerdos} que el usuario introduce de golpe al registrarse (empezando por
+sus favoritas), no lo que acaba de ver. Esto importa mucho para el bloque D (ver \S\ref{sec:split}).
+
+\subsection{Las populares gustan más (de verdad)}
+\begin{center}
+\begin{tikzpicture}
+\begin{axis}[ybar, width=13cm, height=5.2cm, bar width=8pt, ymin=0, ymax=88,
+  xlabel={Decil de popularidad de la película (1 = el 10\,\% más visto)}, ylabel={\% de sus ratings},
+  xtick={1,...,10}, legend style={at={(0.98,0.97)}, anchor=north east, font=\footnotesize, legend columns=3},
+  tick label style={font=\footnotesize}, label style={font=\small}]
+\addplot[fill=blue!35] coordinates {(1,66.1)(2,54.0)(3,52.5)(4,52.7)(5,51.6)(6,50.1)(7,48.9)(8,49.1)(9,47.1)(10,47.7)};
+\addplot[fill=blue!70!black] coordinates {(1,53.3)(2,39.8)(3,37.5)(4,36.8)(5,35.0)(6,32.5)(7,30.8)(8,31.1)(9,31.1)(10,30.0)};
+\addplot[fill=orange!70] coordinates {(1,56.4)(2,47.2)(3,46.9)(4,47.8)(5,47.4)(6,46.4)(7,45.9)(8,46.0)(9,44.6)(10,44.1)};
+\legend{$r\ge3{,}5$, $r\ge4{,}0$, $r>$ media del usuario}
+\end{axis}
+\end{tikzpicture}
+\end{center}
+El 10\,\% de películas más vistas reúne el 78,8\,\% de los ratings, y además allí la tasa de positivos es más alta
+(53\,\% de notas $\ge 4$ frente a 30--40\,\% en el resto). Correlación entre $\log(\text{nº de ratings})$ y nota media de la
+película: 0,26. Las populares no solo se ven más: también gustan más. Ninguna corrección «de muestreo» (logQ) va a
+quitar eso; si queremos más cola larga, es trabajo del MMR.
+
+% =====================================================================
+\section{Tres usuarios inventados}\label{sec:ejemplo}
+% =====================================================================
+Los usaremos durante toda la guía.
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+Película & \textbf{Ana} (generosa) & \textbf{Bruno} (exigente) & \textbf{Carla} (2001, solo enteras) \\
+\midrule
+Pulp Fiction    & ---  & 4,0 & 5 \\
+The Matrix      & 5,0  & 3,5 & 4 \\
+Shrek           & 4,5  & 3,0 & 4 \\
+Titanic         & 5,0  & 1,5 & 3 \\
+Notting Hill    & 4,0  & 2,0 & --- \\
+Batman \& Robin & 3,5  & --- & 1 \\
+\midrule
+Media           & 4,4  & 2,8 & 3,4 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\begin{itemize}
+  \item El 3,5 de Ana a \emph{Batman \& Robin} es su \emph{peor} nota; el 3,5 de Bruno a \emph{The Matrix} es de las mejores.
+  \item \emph{Titanic} es positivo para Ana, nota baja para Bruno y neutra para Carla.
+  \item Carla no podía poner 3,5: su 3 y su 4 significan cosas más anchas.
+\end{itemize}
+
+% =====================================================================
+\section{Cómo aprende una Two-Tower}
+% =====================================================================
+
+\subsection{Dos torres y un producto escalar}
+La torre de usuario convierte al usuario en un vector $\mathbf{u}\in\mathbb{R}^{128}$; la torre de ítem convierte cada
+película en $\mathbf{v}_i\in\mathbb{R}^{128}$. La puntuación es $s(u,i)=\langle\mathbf{u},\mathbf{v}_i\rangle$.
+Como los $\mathbf{v}_i$ no dependen del usuario, se calculan una vez para todo el catálogo y se meten en un índice ANN:
+recomendar es buscar los vectores con mayor producto escalar con $\mathbf{u}$.
+
+\begin{idea}
+La puntuación $s(u,i)$ no tiene por qué ser una nota. Solo importa el \textbf{orden}: que lo que gusta quede por
+encima de lo que no. Por eso podemos «olvidar» la escala de estrellas y quedarnos con positivos.
+\end{idea}
+
+\subsection{Opción 1: regresión de la nota}
+Se entrena para que $s(u,i)\approx r_{ui}$ minimizando el error cuadrático $\sum (r_{ui}-s(u,i))^2$ sobre los ratings que
+existen. Así se ganó el Netflix Prize \cite{koren2009}. Problemas para nosotros:
+\begin{itemize}
+  \item Solo ve películas que el usuario \emph{eligió}; nunca aprende que una película de nicho que él jamás vería debe
+        quedar abajo. Pero el ANN busca en \emph{todo} el catálogo.
+  \item Un buen RMSE no implica un buen top-$K$ \cite{cremonesi2010}.
+  \item No hay negativos que muestrear, así que logQ no tiene sentido. Contradice E1.
+\end{itemize}
+
+\subsection{Opción 2: pérdida contrastiva (softmax) con negativos del lote}
+Para cada par (usuario, película positiva) se pide que el positivo gane a las demás películas:
+\[
+\mathcal{L}(u,i^+) \;=\; -\log \frac{\exp\big(s(u,i^+)/T\big)}{\exp\big(s(u,i^+)/T\big)+\sum_{j\in\mathcal{N}}\exp\big(s(u,j)/T\big)} .
+\]
+$T$ es la \emph{temperatura} (controla lo «afilada» que es la softmax). Lo ideal sería que $\mathcal{N}$ fuera todo el catálogo,
+pero es carísimo. El truco de \cite{yi2019}: en un lote de $B$ pares $(u_k,i_k^+)$, las películas positivas de los
+\emph{otros} usuarios del lote hacen de negativos. Sale gratis: una sola multiplicación de matrices $B\times B$.
+
+\begin{ejemplo}[Ejemplo: un lote de tamaño 3]
+Lote: (Ana, Matrix), (Bruno, Pulp Fiction), (Carla, Shrek). Para Ana, el positivo es \emph{Matrix} y los negativos son
+\emph{Pulp Fiction} y \emph{Shrek}. Si $s=2{,}0$, $1{,}0$ y $0{,}5$ ($T=1$):
+\[
+\mathcal{L}=-\log\frac{e^{2}}{e^{2}+e^{1}+e^{0{,}5}}=-\log\frac{7{,}39}{11{,}76}=0{,}46 .
+\]
+Fíjate: \emph{Shrek} es un positivo de Ana (le puso 4,5) y aquí cuenta como negativo. Es un \textbf{falso negativo}
+(\S\ref{sec:falsos}).
+\end{ejemplo}
+
+\subsection{Sesgo de muestreo y corrección logQ}\label{sec:logq}
+Los negativos del lote no son películas al azar: una película aparece como negativo tantas veces como aparece como
+\emph{positivo} en los datos. Si \emph{Matrix} es el positivo del 2\,\% de los ejemplos y \emph{Shrek} del 0,5\,\%, Matrix
+recibe cuatro veces más «empujones hacia abajo» que en una softmax completa. Sin corregir, el modelo infravalora
+sistemáticamente lo popular por un motivo puramente técnico.
+
+La corrección de \cite{yi2019} resta, solo durante el entrenamiento, el logaritmo de esa probabilidad:
+\[
+s^{*}(u,j) \;=\; s(u,j) - \log P(j), \qquad P(j)=\text{probabilidad de que $j$ salga en un lote}.
+\]
+Con eso, el gradiente es (en esperanza) el de la softmax completa. En inferencia se usa $s(u,j)$ sin corregir.
+
+\begin{ojo}[Lo que logQ hace y lo que no]
+\begin{itemize}[leftmargin=*]
+  \item logQ \textbf{no} es un «castigo a lo popular»: corrige que el lote castigue de más a lo popular. El resultado se
+        parece al de una softmax completa, que refleja la popularidad real.
+  \item En E1 escribimos que logQ «evita que los títulos comerciales acaparen las recomendaciones». Eso es más bien
+        lo contrario de lo que hace: \textbf{hay que reformularlo en la E2}. Lo que reduce el peso de lo popular es el
+        MMR, o multiplicar la corrección por un factor $\alpha<1$ (el $\tau$ de la fórmula de E1).
+  \item $P(j)$ debe ser la frecuencia \textbf{con la que de verdad se generan} los positivos del entrenamiento. Si
+        cambiamos qué es un positivo (C2) o cómo se muestrean (C4, C5), cambia $P(j)$.
+\end{itemize}
+\end{ojo}
+
+\begin{ejemplo}[Ejemplo: contar $P(j)$ con todos los ratings o con los positivos]
+Entre las 300 películas más vistas de la submuestra:
+\begin{center}
+\begin{tabular}{lrrr}
+\toprule
+Película & Puesto (todos) & Puesto ($r\ge4$) & \% $\ge4$ \\
+\midrule
+Charlie's Angels (2000) & 242 & 913 & 18 \\
+Mission: Impossible II (2000) & 253 & 681 & 24 \\
+12 Angry Men (1957) & 254 & 133 & 83 \\
+Rear Window (1954) & 210 & 115 & 80 \\
+\bottomrule
+\end{tabular}
+\end{center}
+Si contáramos $P(j)$ con todos los ratings, a \emph{Charlie's Angels} le restaríamos demasiado durante el
+entrenamiento, el modelo lo compensaría subiéndole la puntuación, y en inferencia la recomendaría de más. A los
+clásicos les pasaría lo contrario. Para las películas con $\ge 100$ ratings, $P_\text{pos}/P_\text{todos}$ va de 0,29 a
+1,46 (p5--p95): diferencias de hasta 1,2 en $\log P$.
+\end{ejemplo}
+
+Si una película no tiene ningún positivo, $\log P = -\infty$: hay que suavizar (sumar 1 a todos los recuentos). Con
+umbral $\ge 4$ hay 3\,915 películas así en la submuestra.
+
+\subsection{Falsos negativos}\label{sec:falsos}
+Con negativos del lote, el negativo que le toca a un usuario es un positivo suyo el \textbf{7,2\,\%} de las veces de
+media (p90: 16\,\%), y algo que ya valoró el 11,1\,\%. Solución habitual: \emph{enmascarar} (poner $-\infty$ en la
+softmax) las películas que el usuario ya tiene. Cuesta una máscara por lote.
+
+\subsection{Negativos duros}
+Un \emph{negativo duro} es uno parecido al positivo (difícil de separar). Las notas bajas de un usuario lo son: las
+eligió porque parecían de su gusto. Usarlas como negativos da más información, pero puede obligar al modelo a separar
+películas casi iguales. Dato: la probabilidad de que un negativo del lote sea justo una nota baja del usuario es solo
+del 1,1\,\%. Si queremos que el modelo vea los «no me gustó», hay que meterlos a propósito.
+
+% =====================================================================
+\section{De nota a positivo: umbrales}
+% =====================================================================
+
+\subsection{Umbral absoluto, relativo o mixto}
+\begin{itemize}
+  \item \textbf{Absoluto}: positivo si $r_{ui}\ge t$ (p.\,ej. $t=4$). Igual para todos.
+  \item \textbf{Relativo}: positivo si $r_{ui}\ge \bar r_u$ (la media del usuario). Quita el sesgo de cada usuario.
+  \item \textbf{Mixto}: $r_{ui}\ge\min(4;\bar r_u)$ (baja el listón a los exigentes, nunca lo sube por encima de 4)
+        o $r_{ui}\ge\max(3{,}5;\bar r_u)$ (lo sube a los generosos).
+  \item \textbf{Residuo}: positivo si $r_{ui}$ supera lo esperable para ese usuario \emph{y} esa película:
+        $r_{ui}-(\mu+b_u+b_i)>0$, con $\mu$ la media global, $b_u$ el sesgo del usuario y $b_i$ el de la película
+        \cite{koren2009}. Mide «le gustó \emph{más de lo esperado}».
+\end{itemize}
+
+\begin{ejemplo}[Los tres usuarios con cada umbral]
+\begin{center}
+\begin{tabularx}{\linewidth}{lYYY}
+\toprule
+Umbral & Ana (4,4) & Bruno (2,8) & Carla (3,4) \\
+\midrule
+$\ge 3{,}5$ & las 5 (también su peor) & Pulp, Matrix & Pulp, Matrix, Shrek \\
+$\ge 4{,}0$ & 4 (no Batman \& Robin) & solo Pulp & Pulp, Matrix, Shrek \\
+$\ge$ media & Titanic, Matrix, Shrek (su 4 a Notting Hill no) & Pulp, Matrix, Shrek (su 3 sí) & Pulp, Matrix, Shrek \\
+$\ge\min(4;\text{media})$ & 4 (umbral 4,0) & Pulp, Matrix, Shrek (umbral 2,8) & Pulp, Matrix, Shrek \\
+$\ge\max(3{,}5;\text{media})$ & Titanic, Matrix, Shrek & Pulp, Matrix & Pulp, Matrix, Shrek \\
+\bottomrule
+\end{tabularx}
+\end{center}
+Con umbral fijo, Ana aporta muchos positivos flojos y Bruno casi ninguno. Con umbral relativo, el 4 de Ana deja de
+contar (¿un 4 no es un 4?). El mixto $\min(4;\bar r_u)$ deja intacta a Ana y rescata a Bruno.
+\end{ejemplo}
+
+\subsection{Lo que dicen los datos}
+\begin{center}
+\small
+\begin{tabular}{lrrrrrr}
+\toprule
+Umbral & \% pos. & Pos./usuario & Usuarios & Sin pos. & Películas & \% pos. en \\
+ & & (med.; p10) & sin pos. & en test$^*$ & $\ge20$ pos. & top 10\,\% \\
+\midrule
+$r\ge3{,}0$ & 82,2 & 63; 21 & 6 & 47 & 8\,130 & 80,9 \\
+$r\ge3{,}5$ & 63,4 & 49; 15 & 17 & 249 & 6\,911 & 82,2 \\
+$r\ge4{,}0$ & 50,0 & 42; 13 & 26 & 374 & 5\,805 & 83,8 \\
+$r\ge4{,}5$ & 23,7 & 20; 5 & 229 & 2\,490 & 3\,689 & 85,9 \\
+$r\ge\bar r_u$ & 54,7 & 40; 13 & 0 & 234 & 6\,581 & 81,6 \\
+$r\ge\min(4;\bar r_u)$ & 59,4 & 46; 15 & 0 & 151 & 6\,777 & 81,9 \\
+$r\ge\max(3{,}5;\bar r_u)$ & 51,7 & 39; 12 & 17 & 350 & 6\,229 & 82,3 \\
+residuo $>0$ & 53,4 & 37; 13 & 1 & 195 & 7\,017 & 79,5 \\
+\bottomrule
+\end{tabular}
+\end{center}
+{\footnotesize $^*$ «Test» provisional: el último 20\,\% de los ratings de cada usuario por fecha. Referencia: con todos los
+ratings, el top 10\,\% de películas reúne el 78,8\,\%.}
+
+Cómo leerla:
+\begin{itemize}
+  \item \textbf{Usuarios sin positivos en test} salen de las métricas (no se puede medir si aciertas si no hay nada
+        que acertar). Cuantos menos, mejor.
+  \item \textbf{Películas con $\ge 20$ positivos}: las que el modelo puede aprender bien por la parte colaborativa; el
+        resto dependerá sobre todo de la sinopsis y los géneros.
+  \item \textbf{\% en top 10\,\%}: cuanto más estricto el umbral, más se concentran los positivos en las populares.
+\end{itemize}
+
+\subsection{Cómo calcular la media de cada usuario: encogimiento}
+Con pocos ratings, la media es ruidosa. La media \emph{encogida} tira hacia la media global $\mu=3{,}54$:
+\[
+\tilde r_u=\frac{\sum_i r_{ui}+\lambda\,\mu}{n_u+\lambda},\qquad \lambda\approx 10 .
+\]
+\begin{ejemplo}
+Un usuario nuevo de Letterboxd ha puntuado 3 películas: 5, 5 y 4,5. Media cruda: 4,83 (umbral mixto $\min(4;4{,}83)=4$).
+Media encogida: $(14{,}5+35{,}4)/13=3{,}84$ (umbral 3,84). Con 300 ratings, las dos medias casi coinciden.
+\end{ejemplo}
+Lo mismo se usa para los sesgos $b_u$ y $b_i$ (en la submuestra, $b_u$ va de $-0{,}56$ a $0{,}77$ y $b_i$ de $-0{,}49$ a
+$0{,}26$, p5--p95).
+
+\begin{ojo}[Fuga de información]
+$\bar r_u$ se tiene que calcular \textbf{solo con los ratings de entrenamiento}. Si se calcula con todos, el umbral de
+train «sabe» las notas de test, y las métricas salen mejores de lo que son. Esto vale para cualquier cosa «por
+usuario» o «por película» (medias, sesgos, $P(j)$ de logQ).
+\end{ojo}
+
+\subsection{Coincidencias y discrepancias}
+\begin{itemize}
+  \item El 8,3\,\% de los ratings son $\ge4$ pero tienen residuo $\le 0$ (gustó, pero menos de lo esperable: un 4 a
+        \emph{Cadena perpetua}).
+  \item El 9,3\,\% son $<4$ pero están por encima de la media del usuario (los «3,5 de Bruno»).
+\end{itemize}
+
+% =====================================================================
+\section{Las notas bajas}
+% =====================================================================
+\begin{center}
+\begin{tabular}{lrrrr}
+\toprule
+Definición & \% ratings & \% usuarios con $\ge1$ & Mediana por usuario & \% en top 10\,\% \\
+\midrule
+$r\le2{,}0$ & 12,7 & 85,6 & 5 & 68,8 \\
+$r\le2{,}5$ & 17,8 & 90,2 & 7 & 69,1 \\
+$r\le\bar r_u-1$ & 13,4 & 95,9 & 8 & 71,8 \\
+\bottomrule
+\end{tabular}
+\end{center}
+Hay tres formas de usarlas:
+\begin{enumerate}
+  \item \textbf{Ignorarlas} (como hace YouTube \cite{covington2016}): solo positivos y negativos del lote.
+  \item \textbf{Negativos duros en la pérdida}: cada positivo compite además con 1--5 notas bajas del usuario. Ojo: logQ
+        no se aplica a ellas porque no salen del mismo muestreo.
+  \item \textbf{Anti-preferencias en la torre de usuario}: $\mathbf{u}$ se calcula con «lo que le gustó» y, por separado,
+        «lo que no». No cambia la pérdida; es una decisión del bloque F.
+\end{enumerate}
+Entre «nota baja» y el umbral de positivo queda una \textbf{zona neutra} (p.\,ej. $2{,}5<r<4$): hay que decidir si esas
+películas entran en el historial que lee la torre de usuario.
+
+% =====================================================================
+\section{Pesos}
+% =====================================================================
+
+\subsection{Pesar los positivos por la nota}
+Con pesos, la pérdida pasa a ser $\sum w_{ui}\,\mathcal{L}(u,i)$. Ejemplos, con umbral $t$:
+lineal $w=1+(r-t)$; exponencial $w=2^{\,r-t}$; relativo $w=1+\max(0,r-\bar r_u)$. Con el lineal y $t=4$,
+el 5 de Ana a \emph{Titanic} pesa 2 y su 4 a \emph{Notting Hill} pesa 1.
+
+\textbf{Tamaño efectivo de muestra (ESS)} \cite{kish1965}: cuánto «vale» una muestra con pesos frente a una sin pesos,
+\[
+\text{ESS}=\frac{(\sum w)^2}{N\sum w^2}\in(0,1].
+\]
+Con 4 positivos de pesos 1, 1, 1 y 3: $\text{ESS}=36/48=0{,}75$, es decir, es como tener 3 ejemplos sin pesos. Pesos
+muy desiguales $\Rightarrow$ gradiente más ruidoso.
+
+\begin{center}
+\small
+\begin{tabular}{lrrrr}
+\toprule
+Pesos (positivos $r\ge3{,}5$) & ESS (\%) & \multicolumn{3}{c}{\% del peso total en\dots} \\
+\cmidrule(l){3-5}
+ & & notas 5 & top 10\,\% películas & top 10\,\% usuarios \\
+\midrule
+$w=1$ & 100 & 22,9 & 82,2 & 42,6 \\
+lineal $w=r-2{,}5$ & 91,2 & 33,7 & 83,3 & 39,8 \\
+exponencial $w=2^{r-3{,}5}$ & 87,3 & 37,3 & 83,5 & 39,3 \\
+relativo $1+\max(0,r-\bar r_u)$ & 90,2 & 31,2 & 82,5 & 43,9 \\
+$w=1/\sqrt{n_u}$ & 73,4 & 27,0 & 86,6 & 22,0 \\
+$w=(r-2{,}5)/\sqrt{n_u}$ & 64,0 & 38,4 & 87,3 & 20,0 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Dos maneras de aplicar un peso: \textbf{multiplicar la pérdida} (no cambia qué sale en los lotes, logQ intacto) o
+\textbf{muestrear} más a menudo los ejemplos que pesan más (cambia qué sale en los lotes, y entonces $P(j)$ de logQ
+hay que contarlo con esos pesos).
+
+\subsection{Pesar cada usuario}
+El 10\,\% de usuarios más activos aporta el \textbf{46,6\,\%} de los ratings. Si cada rating pesa igual, el modelo se
+optimiza para ellos; pero las métricas promedian \emph{por usuario}, y los usuarios de Letterboxd tendrán pocos ratings.
+Opciones: $w=1/\sqrt{n_u}$ (compromiso), o generar los ejemplos por usuario con un tope por época, como YouTube
+\cite{covington2016}: «dado su historial, ¿cuál es el siguiente positivo?». Lo segundo solo existe si la torre de
+usuario lee el historial (bloque F).
+
+% =====================================================================
+\section{Evaluación y split}\label{sec:split}
+% =====================================================================
+
+\subsection{Métricas de top-$K$}
+Para cada usuario de test se generan $K$ recomendaciones (excluyendo lo que ya vio en train) y se comparan con sus
+películas relevantes de test $R_u$.
+\[
+\text{Recall@}K=\frac{|\text{top-}K\cap R_u|}{|R_u|},\qquad
+\text{NDCG@}K=\frac{\sum_{k=1}^{K}\frac{\mathbb{1}[\text{pos. }k\in R_u]}{\log_2(k+1)}}{\text{lo mismo con el orden ideal}}
+\ \text{\cite{jarvelin2002}}.
+\]
+\begin{ejemplo}
+Ana tiene 3 relevantes en test y le recomendamos 5 películas; aciertan la 1.ª y la 4.ª.
+Recall@5 $=2/3=0{,}67$. DCG $=1/\log_2 2+1/\log_2 5=1+0{,}43=1{,}43$; ideal (3 aciertos arriba):
+$1+0{,}63+0{,}5=2{,}13$; NDCG@5 $=0{,}67$. NDCG premia acertar \emph{arriba}.
+\end{ejemplo}
+Las métricas se calculan sobre el catálogo completo, no sobre 100 negativos al azar: las métricas «muestreadas» pueden
+invertir el orden entre modelos \cite{krichene2020}. Además conviene medir \textbf{cobertura} (qué fracción del catálogo
+llega a recomendarse) y \textbf{novedad} (lo poco populares que son las recomendaciones), que es lo que el MMR debe mejorar.
+
+\subsection{¿Qué es «relevante» en test?}
+Si «relevante» usa la misma definición que el entrenamiento, al cambiar el umbral cambia también la vara de medir y dos
+modelos dejan de ser comparables. Una solución: medir con las dos (la de train y una fija, $r\ge4$, comparable con la
+literatura).
+
+\subsection{Tipos de split (bloque D, pero afecta aquí)}
+\begin{itemize}
+  \item \textbf{Aleatorio}: ratings al azar a test. Fácil, pero el modelo «ve el futuro».
+  \item \textbf{Último(s) de cada usuario} (\emph{leave-last-out} o último 20\,\%): realista, pero en el 59\,\% de los
+        usuarios todo pasa el mismo día y con empates de segundo: el «orden» es casi arbitrario.
+  \item \textbf{Temporal global}: todo lo anterior a una fecha a train, lo posterior a test. Sin fugas temporales, pero
+        muchos usuarios de test no tienen nada en train (eso es justo el caso Letterboxd).
+  \item \textbf{Por usuarios}: unos usuarios en train y otros en test, a los que se les da una parte de su historial y
+        se predice el resto. Encaja con una torre de usuario basada en historial.
+\end{itemize}
+Comparativa de estrategias en \cite{meng2020}. Pase lo que pase, todo lo que se calcula «por usuario» o «por película»
+(\S5.3) sale solo de train.
+
+% =====================================================================
+\section{Las preguntas}
+% =====================================================================
+\rec\ = mi recomendación, no una decisión. «D» / «F» = depende de ese bloque.
+
+\newcommand{\preg}[3]{\subsection*{#1 \normalfont\small\hfill #3}\textit{#2}\par}
+
+\preg{C1. Tipo de señal}{¿Qué predice el modelo?}{D1, F1}
+\begin{enumerate}[label=\alph*)]
+  \item Regresión de la nota (error cuadrático). Sin negativos ni logQ; contradice E1.
+  \item \rec\ Positivo / no positivo con pérdida contrastiva, negativos del lote y logQ (lo de E1).
+  \item Como b, pero positivo relativo a la media del usuario (en la práctica, una opción de C2).
+  \item Las dos cosas: contrastiva + una salida que predice la nota.
+\end{enumerate}
+
+\preg{C2. Umbral de positivo}{¿A partir de qué nota «le gusta»?}{D (media solo con train)}
+\begin{enumerate}[label=\alph*)]
+  \item $r\ge3{,}5$ (63,4\,\% positivos; 17 usuarios sin ninguno).
+  \item $r\ge4{,}0$ (50,0\,\%; 26 sin ninguno; 374 sin positivos en test). El estándar de los papers.
+  \item $r\ge$ media del usuario (54,7\,\%; 0 sin positivos; 234 sin positivos en test).
+  \item \rec\ $r\ge\min(4{,}0;\ \text{media})$ (59,4\,\%; 0; 151). Con b como ablación.
+  \item $r\ge\max(3{,}5;\ \text{media})$ (51,7\,\%; 17; 350).
+  \item Residuo $>0$. Desaconsejado como objetivo.
+\end{enumerate}
+
+\preg{C3. Notas bajas}{¿Qué hacemos con lo que no le gustó?}{F}
+\begin{enumerate}[label=\alph*)]
+  \item \rec\ (primera versión) Tirarlas.
+  \item Negativos duros en la pérdida.
+  \item Anti-preferencias en la torre de usuario.
+  \item a + c.
+\end{enumerate}
+
+\preg{C4. Pesar los positivos por la nota}{¿Un 5 vale más que un 4?}{C2}
+\begin{enumerate}[label=\alph*)]
+  \item No: todos pesan 1.
+  \item \rec\ Lineal $w=1+(r-t)$, multiplicando la pérdida (ESS 91\,\%; es lo que prometimos en E1).
+  \item Exponencial $w=2^{r-t}$.
+  \item Relativo $w=1+\max(0,r-\bar r_u)$.
+\end{enumerate}
+
+\preg{C5. Peso de cada usuario}{¿Cuentan igual los que puntúan 20 y 2\,000 películas?}{F1, C13}
+\begin{enumerate}[label=\alph*)]
+  \item Nada (el top 10\,\% de usuarios aporta el 46,6\,\%).
+  \item $w=1/\sqrt{n_u}$.
+  \item \rec\ Ejemplos por usuario con tope por época (o b si F no usa historial).
+\end{enumerate}
+
+\preg{C6. Media del usuario}{¿Cómo se calcula (siempre solo con train)?}{D}
+\begin{enumerate}[label=\alph*)]
+  \item Media normal.
+  \item \rec\ Media encogida, $\lambda\approx10$.
+  \item Mediana.
+\end{enumerate}
+
+\preg{C7. Relevante en test}{¿Qué cuenta como acierto?}{C2, D}
+\begin{enumerate}[label=\alph*)]
+  \item Lo mismo que en train.
+  \item Siempre $r\ge4$.
+  \item \rec\ Las dos.
+\end{enumerate}
+
+\preg{C8. Usuarios sin positivos}{¿Qué hacemos con ellos?}{D}
+\begin{enumerate}[label=\alph*)]
+  \item Quitarlos del todo.
+  \item \rec\ Mantenerlos en train y dejarlos fuera de las métricas.
+\end{enumerate}
+
+\preg{C9. Valoraciones en bloque el primer día}{¿Las tratamos distinto?}{D}
+\begin{enumerate}[label=\alph*)]
+  \item \rec\ Nada en C; se decide en D.
+  \item Solo como historial, nunca como objetivo.
+  \item Con menos peso.
+\end{enumerate}
+
+\preg{C10. Usuarios sin medias estrellas}{¿Ajustamos la escala?}{C2}
+\begin{enumerate}[label=\alph*)]
+  \item \rec\ Nada (si C2 es c o d, la media ya lo absorbe).
+  \item Umbral distinto según la época.
+\end{enumerate}
+
+\preg{C11. Ratings antes del estreno}{218 en total.}{---}
+\begin{enumerate}[label=\alph*)]
+  \item Mantenerlos.
+  \item \rec\ Quitarlos.
+  \item Solo como historial.
+\end{enumerate}
+
+\preg{C12. Re-ratings}{MovieLens no tiene; Letterboxd sí.}{---}
+\begin{enumerate}[label=\alph*)]
+  \item \rec\ Quedarse con la última nota (como en B1b).
+  \item La media de las notas.
+\end{enumerate}
+
+\preg{C13. logQ}{¿Con qué se cuenta $P(j)$?}{C2, C4, C5}
+\begin{enumerate}[label=\alph*)]
+  \item Con todos los ratings.
+  \item Con los positivos de train, más suavizado $+1$.
+  \item \rec\ Como b, pero contando como se generan de verdad los ejemplos de entrenamiento.
+\end{enumerate}
+
+\preg{C14. Falsos negativos del lote}{¿Enmascaramos?}{C3}
+\begin{enumerate}[label=\alph*)]
+  \item Ignorarlos (7,2\,\% de los negativos son positivos del propio usuario).
+  \item Enmascarar los positivos del usuario.
+  \item \rec\ Enmascarar todo lo que el usuario ya valoró.
+\end{enumerate}
+
+\subsection*{Resumen de dependencias}
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{lYY}
+\toprule
+Pregunta & Depende de D porque\dots & Depende de F porque\dots \\
+\midrule
+C1 & el split decide qué positivos hay en test & si $\mathbf{u}$ sale del historial, C decide qué entra en él \\
+C2, C6 & la media del usuario solo con train & --- \\
+C3 & --- & la opción c es una entrada de la torre de usuario \\
+C5 & --- & «ejemplos por usuario» solo existe si F usa historial \\
+C7, C8 & definen el test & --- \\
+C9 & en el 59\,\% de los usuarios no hay orden temporal real & --- \\
+C13 & $P(j)$ solo con train & depende del generador de ejemplos (C5) \\
+\bottomrule
+\end{tabularx}
+\end{center}
+Orden propuesto: C1 + D1 + F1 juntas; luego C2, C4 y C6; C3 y C5 con F; C7--C9 con D; C13 y C14 al escribir la pérdida.
+
+% =====================================================================
+\section*{Glosario}
+\addcontentsline{toc}{section}{Glosario}
+% =====================================================================
+\begin{description}[leftmargin=3.2cm, style=nextline, itemsep=1pt]
+  \item[ANN / HNSW] Búsqueda aproximada de vecinos más cercanos; HNSW es el índice en grafo que usaremos.
+  \item[Binarizar] Convertir cada nota en positivo / no positivo.
+  \item[ESS] Tamaño efectivo de muestra con pesos.
+  \item[Falso negativo] Un positivo del usuario usado como negativo.
+  \item[Fuga (leakage)] Usar en entrenamiento información que solo existe en test.
+  \item[In-batch] Usar los positivos de los demás ejemplos del lote como negativos.
+  \item[logQ] Restar $\log P(j)$ para corregir el sesgo de muestreo de los negativos.
+  \item[MNAR] Datos que faltan por un motivo relacionado con su valor (no se puntúa lo que no se espera que guste).
+  \item[MMR] Reordenación que equilibra relevancia y variedad.
+  \item[NDCG / Recall@$K$] Métricas de top-$K$ (\S\ref{sec:split}).
+  \item[Residuo] Nota menos lo esperable: $r_{ui}-(\mu+b_u+b_i)$.
+  \item[Temperatura $T$] Divide las puntuaciones en la softmax; más baja, más «afilada».
+\end{description}
+
+\begin{thebibliography}{99}
+\bibitem{covington2016} P.~Covington, J.~Adams, E.~Sargin. \emph{Deep Neural Networks for YouTube Recommendations}. RecSys, 2016.
+\bibitem{cremonesi2010} P.~Cremonesi, Y.~Koren, R.~Turrin. \emph{Performance of Recommender Algorithms on Top-N Recommendation Tasks}. RecSys, 2010.
+\bibitem{harper2015} F.~M.~Harper, J.~A.~Konstan. \emph{The MovieLens Datasets: History and Context}. ACM TiiS, 2015.
+\bibitem{hu2008} Y.~Hu, Y.~Koren, C.~Volinsky. \emph{Collaborative Filtering for Implicit Feedback Datasets}. ICDM, 2008.
+\bibitem{jarvelin2002} K.~Järvelin, J.~Kekäläinen. \emph{Cumulated Gain-Based Evaluation of IR Techniques}. ACM TOIS, 2002.
+\bibitem{kish1965} L.~Kish. \emph{Survey Sampling}. Wiley, 1965.
+\bibitem{koren2009} Y.~Koren, R.~Bell, C.~Volinsky. \emph{Matrix Factorization Techniques for Recommender Systems}. IEEE Computer, 2009.
+\bibitem{krichene2020} W.~Krichene, S.~Rendle. \emph{On Sampled Metrics for Item Recommendation}. KDD, 2020.
+\bibitem{marlin2009} B.~M.~Marlin, R.~S.~Zemel. \emph{Collaborative Prediction and Ranking with Non-Random Missing Data}. RecSys, 2009.
+\bibitem{meng2020} Z.~Meng, R.~McCreadie, C.~Macdonald, I.~Ounis. \emph{Exploring Data Splitting Strategies for the Evaluation of Recommendation Models}. RecSys, 2020.
+\bibitem{rendle2009} S.~Rendle, C.~Freudenthaler, Z.~Gantner, L.~Schmidt-Thieme. \emph{BPR: Bayesian Personalized Ranking from Implicit Feedback}. UAI, 2009.
+\bibitem{yi2019} X.~Yi, J.~Yang, L.~Hong, D.~Z.~Cheng, L.~Heldt, A.~Kumthekar, Z.~Zhao, L.~Wei, E.~Chi. \emph{Sampling-Bias-Corrected Neural Modeling for Large Corpus Item Recommendations}. RecSys, 2019.
+\end{thebibliography}
+
+\end{document}
