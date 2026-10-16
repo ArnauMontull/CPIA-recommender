@@ -1,6 +1,6 @@
 # Planning del bloque C: qué significa «le gusta» (la señal objetivo)
 
-Estado: **abierto, sin decidir** (15/10/2026). Las cifras salen de `reports/senal_objetivo.md`
+Estado: **decidido el 16/10/2026** → ver `decisiones_preprocesamiento.md` (bloque C). Abierto el 15/10/2026. Las cifras salen de `reports/senal_objetivo.md`
 (`python -m src.analisis.senal_objetivo`, submuestra de desarrollo: 3 154 155 ratings, 20 085 usuarios).
 Cada pregunta tiene opciones, qué implica cada una (modelo, pérdida, evaluación, E2) y una recomendación ⭐ que
 **no es una decisión**: decide Arnau (y Uriel), y lo decidido pasa a `decisiones_preprocesamiento.md`.

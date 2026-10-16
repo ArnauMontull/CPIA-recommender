@@ -1,0 +1,796 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[spanish,es-nodecimaldot,es-noshorthands]{babel}
+\usepackage{amsmath, amssymb, mathtools}
+\usepackage[left=2.3cm,right=2.3cm,top=2.3cm,bottom=2.3cm]{geometry}
+\usepackage{microtype}
+\usepackage{parskip}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage[most]{tcolorbox}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue!60!black, urlcolor=blue!60!black, citecolor=green!45!black}
+
+\addto\captionsspanish{\renewcommand{\tablename}{Tabla}}
+\setlist{itemsep=2pt, topsep=3pt}
+\renewcommand{\arraystretch}{1.18}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\newtcolorbox{idea}[1][Idea clave]{colback=blue!4, colframe=blue!45!black, fonttitle=\bfseries, title=#1, boxrule=0.6pt, arc=2pt}
+\newtcolorbox{ojo}[1][Ojo]{colback=orange!6, colframe=orange!70!black, fonttitle=\bfseries, title=#1, boxrule=0.6pt, arc=2pt}
+\newtcolorbox{ejemplo}[1][Ejemplo]{colback=green!4, colframe=green!40!black, fonttitle=\bfseries, title=#1, boxrule=0.6pt, arc=2pt}
+\newcommand{\rec}{\ensuremath{\star}}
+\newcommand{\pos}{\ensuremath{\mathcal{P}}}
+\newcommand{\cel}[3]{\fill[#3,draw=white,thin] (#1,#2) rectangle ++(1,1);}
+\newcommand{\ctr}{blue!35}\newcommand{\cva}{orange!60}\newcommand{\cte}{red!55}\newcommand{\ccx}{gray!35}
+
+\title{\textbf{Partir los datos y describir las películas}\\[4pt]
+\large Guía para responder a los bloques D (split) y E (features de la torre de películas) del recomendador de CPIA}
+\author{Arnau Montull \quad para \quad Uriel Martínez}
+\date{16 de octubre de 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent Esta guía reúne lo necesario para decidir dos cosas: \textbf{(D)} cómo partimos los ratings en entrenamiento,
+validación y test sin hacernos trampas, y \textbf{(E)} qué información sobre cada película (sinopsis, géneros, reparto,
+año\dots) recibe la torre de ítem. Cada concepto viene con un ejemplo y con cifras medidas en la submuestra de desarrollo
+(3\,154\,155 ratings, 20\,085 usuarios, 22\,787 películas con rating): cuántos usuarios y películas de test no aparecen en
+entrenamiento con cada tipo de split, cuánta fuga habría, qué cobertura tiene cada feature y qué pasa con las películas
+de estreno reciente. Al final están las preguntas D1--D10 y E1--E9 con sus opciones, implicaciones (modelo, pérdida,
+evaluación, entrega E2), qué decisiones del bloque C les afectan y mi recomendación (\rec), que \emph{no} es una decisión.
+Las cifras salen de \texttt{python -m src.analisis.split\_y\_features} (\texttt{reports/split\_y\_features.md}); la versión
+corta, con la hoja de respuestas, está en \texttt{docs/planning\_bloque\_D\_E.md}.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% =====================================================================
+\section{Dónde estamos y qué se decide aquí}
+% =====================================================================
+
+\subsection{Lo ya decidido (bloques A, B y C)}
+\begin{itemize}
+  \item \textbf{A (datos)}: solo \texttt{ml-32m/ratings.csv} (1995--2023); de Kaggle/TMDB solo metadatos. Submuestra de
+        desarrollo: el 10\,\% de los usuarios enteros, estratificada; el conjunto completo, para los resultados finales.
+  \item \textbf{B (limpieza)}: fuera las películas con menos de 20 ratings (se pierde el 0,86\,\% de los ratings);
+        quedan 31\,725\,154 ratings, 200\,948 usuarios y 23\,335 películas. Duplicados (mismo \texttt{tmdbId})
+        fusionados. Sinopsis para el 99,5\,\% de las películas. \textbf{B3 sigue pendiente} (géneros de MovieLens o
+        TMDB): lo tratamos en E5.
+  \item \textbf{C (señal objetivo)}, provisional salvo lo marcado:
+\end{itemize}
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{lY}
+\toprule
+Pregunta & Decisión \\
+\midrule
+C1 b & Implícito binario; pérdida contrastiva con negativos del lote y corrección logQ. \\
+C2 & Positivo si $r\ge\min(T;\bar r_u)$ con \textbf{$T=4{,}0$ (confirmado)}. \\
+C3 c & Anti-preferencias en la torre de usuario; «nota baja» $=r\le\bar r_u-1$. \\
+C4 d & Peso $w=1+\max(0,\,r-\bar r_u)$ multiplicando la pérdida. \\
+C5 a & Cada rating positivo es un ejemplo, sin tope por usuario. \\
+C6 a & $\bar r_u$ cruda, calculada solo con train. \\
+C7 c & Relevante en test: con la definición de train \emph{y} con $r\ge4{,}0$. \\
+C8 b & Usuarios sin positivos en train o test se quedan en train y salen de las métricas. \\
+C9 c & Peso $\times0{,}75$ a los ratings de las primeras 24\,h de cada usuario. \\
+C10 a, C11 b, C12 a & Nada para la escala; quitar ratings anteriores al estreno; re-ratings: la última. \\
+C13 b & $P(i)=$ positivos de $i$ en train $/$ total, con $+1$ de suavizado. \\
+C14 c & Enmascarar en la softmax todo lo que el usuario ha valorado en train. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{La arquitectura que prometimos en E1}
+\begin{center}
+\begin{tikzpicture}[node distance=5mm and 9mm, every node/.style={font=\small},
+  caja/.style={draw, rounded corners=2pt, align=center, minimum height=9mm, fill=#1},
+  caja/.default=white, flecha/.style={-{Stealth[length=2.2mm]}, thick}]
+  \node[caja=blue!8] (hist) {Historial del usuario\\(notas)};
+  \node[caja=blue!18, right=of hist] (tu) {Torre de usuario\\$\Psi_U$};
+  \node[caja=green!8, below=12mm of hist] (meta) {Sinopsis, géneros,\\director, año};
+  \node[caja=green!18, right=of meta] (ti) {Torre de ítem\\$\Psi_I$};
+  \node[caja=orange!12, right=14mm of tu, yshift=-10.5mm] (dot) {$\langle \mathbf{u}, \mathbf{v}_i\rangle$\\+ ANN (HNSW)};
+  \node[caja=orange!22, right=of dot] (mmr) {200 candidatos\\$\rightarrow$ MMR $\rightarrow$ 20};
+  \draw[flecha] (hist) -- (tu); \draw[flecha] (meta) -- (ti);
+  \draw[flecha] (tu) -- node[above, sloped]{$\mathbf{u}$} (dot); \draw[flecha] (ti) -- node[below, sloped]{$\mathbf{v}_i$} (dot);
+  \draw[flecha] (dot) -- (mmr);
+  \node[below=1mm of meta, font=\footnotesize\itshape, text=red!60!black] {aquí entra el bloque E};
+  \node[above=1mm of hist, font=\footnotesize\itshape, text=red!60!black] {el bloque D decide qué historial y qué test};
+\end{tikzpicture}
+\end{center}
+
+En E1 prometimos: Two-Tower con pérdida contrastiva y corrección logQ \cite{yi2019}, búsqueda aproximada (HNSW) para
+sacar 200 candidatos, MMR \cite{carbonell1998} para dejar 20, embedding de la sinopsis con MiniLM ($d=384$), géneros y
+director en multi-hot, y el \emph{export} de Letterboxd de un usuario nuevo como caso real.
+
+\subsection{Qué decide cada bloque, y el supuesto que he tomado para E}
+\begin{itemize}
+  \item \textbf{Bloque D = split train/validación/test}: cómo se reparten los ratings, qué usuarios y películas ve el
+        modelo al entrenar, con qué se valida, cómo se mide (métricas y $K$) y cómo se hace reproducible.
+  \item \textbf{Bloque E = features de la torre de películas}. Esto no aparece definido en la entrega E1 ni en el PDF
+        de etapas del proyecto de la asignatura; el supuesto sale de \texttt{docs/\allowbreak planning\_\allowbreak bloques\_\allowbreak D\_H.md} (bloque E:
+        embedding de sinopsis, créditos, keywords y numéricas). El bloque F (torre de usuario) queda fuera: aquí solo se
+        decide qué sabe el modelo de \emph{cada película}.
+\end{itemize}
+
+\begin{ojo}[Tres cosas que se cruzan]
+\begin{itemize}[leftmargin=*]
+  \item \textbf{D1 y F1} van juntos: un split por usuarios solo tiene sentido si la torre de usuario lee el historial y
+        no un identificador de usuario. Y D1 define el escenario de Letterboxd (un usuario que no estaba en el
+        entrenamiento).
+  \item \textbf{D8 y E6} van juntos: el arranque en frío de películas solo se puede \emph{medir} si el split deja
+        películas sin entrenar; y solo se puede \emph{resolver} si la torre de ítem funciona con solo contenido.
+  \item \textbf{D3 y E1--E4}: todo lo que se ajusta (vocabularios, frecuencias mínimas, medias para normalizar) tiene
+        que respetar el patrón \emph{fit/transform}.
+\end{itemize}
+\end{ojo}
+
+% =====================================================================
+\section{Bloque D: cómo partir los datos}\label{sec:D}
+% =====================================================================
+
+\subsection{Para qué sirve cada partición}
+\begin{itemize}
+  \item \textbf{Train}: con él se ajustan los pesos de las torres \emph{y} todo lo que se «calcula de los datos»
+        ($\bar r_u$, $P(i)$ de logQ, la máscara de C14, vocabularios\dots).
+  \item \textbf{Validación}: sirve para elegir hiperparámetros (temperatura, tamaño, tasa de aprendizaje\dots) y parar
+        el entrenamiento a tiempo (\emph{early stopping}). Cada vez que miramos su resultado y decidimos algo, «se
+        gasta» un poco.
+  \item \textbf{Test}: se mira una vez, al final, para decir cuánto vale el modelo. Si se usa para decidir, deja de
+        ser test.
+\end{itemize}
+
+\begin{idea}
+Un split es una \emph{hipótesis sobre el futuro}: dice qué información estará disponible cuando haya que recomendar y
+qué no. Cuanto más se parezca el split al uso real (un usuario nuevo trae su historial y pide recomendaciones), más
+honestas son las métricas. En esta guía, ese uso real es el de Letterboxd.
+\end{idea}
+
+\subsection{Los cuatro tipos de split}
+\begin{center}
+\begin{tikzpicture}[x=0.26cm, y=0.3cm, font=\footnotesize]
+  \tikzset{tr/.style={fill=blue!35, draw=white, thin}, va/.style={fill=orange!60, draw=white, thin},
+           te/.style={fill=red!55, draw=white, thin}, cx/.style={fill=gray!35, draw=white, thin},
+           vacio/.style={fill=white, draw=gray!30, thin}}
+  % (a) aleatorio
+  \begin{scope}
+    \pgfmathsetseed{11}
+    \foreach \y in {0,...,5}{\foreach \x in {0,...,11}{
+      \pgfmathparse{rnd}\let\r\pgfmathresult
+      \ifdim\r pt<0.8pt \cel{\x}{\y}{\ctr}\else\ifdim\r pt<0.9pt \cel{\x}{\y}{\cva}\else\cel{\x}{\y}{\cte}\fi\fi}}
+    \node at (6,-2.2) {(a) aleatorio};
+  \end{scope}
+  % (b) temporal global
+  \begin{scope}[xshift=3.8cm]
+    \foreach \y/\ini in {0/0,1/0,2/2,3/5,4/7,5/9}{\foreach \x in {\ini,...,11}{
+      \ifnum\x<9 \cel{\x}{\y}{\ctr}\else\ifnum\x<10 \cel{\x}{\y}{\cva}\else\cel{\x}{\y}{\cte}\fi\fi}}
+    \node at (6,-2.2) {(b) temporal global};
+  \end{scope}
+  % (c) último por usuario
+  \begin{scope}[xshift=7.6cm]
+    \foreach \y/\fin in {0/11,1/9,2/11,3/7,4/11,5/10}{\foreach \x in {0,...,\fin}{
+      \ifnum\x<\fin \ifnum\x<\numexpr\fin-1\relax \cel{\x}{\y}{\ctr}\else\cel{\x}{\y}{\cva}\fi\else\cel{\x}{\y}{\cte}\fi}}
+    \node at (6,-2.2) {(c) último de cada usuario};
+  \end{scope}
+  % (d) por usuarios
+  \begin{scope}[xshift=11.4cm]
+    \foreach \y in {2,...,5}{\foreach \x in {0,...,11}{\cel{\x}{\y}{\ctr}}}
+    \foreach \y/\g in {0/\cva,1/\cte}{\foreach \x in {0,...,11}{\ifnum\x<9 \cel{\x}{\y}{\ccx}\else\cel{\x}{\y}{\g}\fi}}
+    \node at (6,-2.2) {(d) por usuarios};
+  \end{scope}
+  % leyenda
+  \begin{scope}[yshift=-1.9cm, xshift=0cm]
+    \fill[blue!35] (0,0) rectangle ++(1.2,1.2); \node[right] at (1.4,0.6) {train};
+    \fill[orange!60] (10,0) rectangle ++(1.2,1.2); \node[right] at (11.4,0.6) {validación};
+    \fill[red!55] (24,0) rectangle ++(1.2,1.2); \node[right] at (25.4,0.6) {test};
+    \fill[gray!35] (33,0) rectangle ++(1.2,1.2); \node[right] at (34.4,0.6) {contexto (entrada del modelo, no se predice)};
+  \end{scope}
+  \node[rotate=90] at (-1.6,3) {usuarios};
+  \draw[-{Stealth}] (0,-0.9) -- (12,-0.9) node[right, font=\tiny] {tiempo};
+\end{tikzpicture}
+\end{center}
+
+\begin{itemize}
+  \item \textbf{(a) Aleatorio por rating}: cada rating cae al azar en una partición. Fácil, pero entrenamos con ratings
+        posteriores al que predecimos. Es el tipo que \cite{covington2016} descarta porque «filtra información del futuro».
+  \item \textbf{(b) Temporal global}: un corte por fecha; lo anterior a train, lo posterior a test. No hay fuga
+        temporal, pero casi todo el test pertenece a usuarios que se registraron después del corte.
+  \item \textbf{(c) Último de cada usuario} (\emph{leave-last-out}): su última interacción a test, la anterior a
+        validación. Es el protocolo de NCF y SASRec \cite{he2017,kang2018}.
+  \item \textbf{(d) Por usuarios} (generalización fuerte): un grupo de usuarios entero se aparta del entrenamiento; de
+        cada uno se da al modelo el 80\,\% de su historial (\emph{fold-in}) y se predice el 20\,\% restante. Es el
+        protocolo de Mult-VAE y de los trabajos que le siguen \cite{liang2018,steck2019}, y es exactamente el
+        escenario de un usuario nuevo de Letterboxd.
+\end{itemize}
+
+\begin{ejemplo}[Ejemplo: Ana con cada split]
+Ana tiene 10 ratings. En (a) el 8 de ellos va a train, uno a val y uno a test \emph{al azar}: su rating más reciente
+puede estar en train, y uno antiguo en test. En (c) los 8 primeros van a train, el 9.º a val y el 10.º a test. En (b) los
+que haya antes del corte van a train y los que haya después, a test (si Ana se registró después, \emph{todo} su historial
+cae en test y el modelo no la ha visto nunca). En (d), o Ana entera es de train, o Ana es de test: los 8 primeros ratings
+entran en la torre de usuario y el modelo tiene que acertar los 2 últimos.
+\end{ejemplo}
+
+\subsection{Lo que dicen los datos sobre cada split}
+Todos los splits son 80/10/10 sobre la submuestra de desarrollo, con la semilla 42. «Positivo» es el de C2
+($r\ge\min(4{,}0;\bar r_u)$, con $\bar r_u$ de la historia visible).
+\begin{center}
+\footnotesize
+\begin{tabular}{lrrrr}
+\toprule
+ & Aleatorio & Último/usuario & Temporal global & Por usuarios \\
+\midrule
+Ratings en train & 2\,523\,007 & 2\,505\,121 & 2\,523\,324 & 2\,528\,833 \\
+Ratings en val & 315\,963 & 324\,517 & 315\,429 & 64\,835 \\
+Ratings en test & 315\,185 & 324\,517 & 315\,402 & 61\,867 \\
+Usuarios con ratings en test & 19\,690 & 20\,085 & 2\,259 & 2\,069 \\
+\addlinespace
+Usuarios de test sin nada en train & 0 & 0 & 1\,809 & 2\,069 \\
+\% ratings de test de usuarios sin train & 0 & 0 & 86,3 & 100 \\
+\% ratings de test en películas sin train & 0,06 & 0,43 & 13,24 & 0,15 \\
+\% ratings de test en películas con $<5$ en train & 0,90 & 2,73 & 15,63 & 1,54 \\
+\% ratings de test en películas con $<20$ en train & 3,32 & 7,72 & 19,43 & 5,35 \\
+\addlinespace
+\% de test \emph{anterior} al último rating visible & 98,9 & 0 & 0 & 0 \\
+\% de test el mismo día del último rating visible & 1,0 & 50,2 & 0 & 62,2 \\
+\bottomrule
+\end{tabular}
+\end{center}
+Corte del temporal global: train hasta el 22/07/2018, validación hasta el 22/10/2020, test después. (En el conjunto
+completo los cortes son el 01/09/2018 y el 21/10/2020: casi los mismos.)
+
+\begin{center}
+\begin{tikzpicture}
+\begin{axis}[ybar, width=12cm, height=5.4cm, bar width=9pt, ymin=0, ymax=100, enlarge x limits=0.18,
+  symbolic x coords={Aleatorio, Último por usuario, Temporal global, Por usuarios}, xtick=data,
+  ylabel={\% de los ratings de test}, ylabel style={font=\small}, tick label style={font=\footnotesize},
+  legend style={at={(0.02,0.97)}, anchor=north west, font=\footnotesize}, nodes near coords, nodes near coords style={font=\tiny}]
+\addplot[fill=blue!35] coordinates {(Aleatorio,0)(Último por usuario,0)(Temporal global,86.3)(Por usuarios,100)};
+\addplot[fill=orange!65] coordinates {(Aleatorio,0.9)(Último por usuario,2.7)(Temporal global,15.6)(Por usuarios,1.5)};
+\legend{De usuarios sin nada en train, En películas con $<5$ ratings en train}
+\end{axis}
+\end{tikzpicture}
+\end{center}
+
+Lo que enseña:
+\begin{itemize}
+  \item \textbf{Aleatorio}: el 98,9\,\% de los ratings de test son \emph{anteriores} al último rating que el modelo ve de
+        ese usuario: se entrena con el futuro. Casi no hay frío, ni de usuarios ni de películas.
+  \item \textbf{Temporal global}: el 86,3\,\% del test son ratings de usuarios que no están en train, y el 13,2\,\% son de
+        películas sin ningún rating en train. Solo 439 de los 2\,259 usuarios de test (19,4\,\%) tienen algún positivo en
+        test \emph{y} en su historia: el test mide sobre todo recomendación a usuarios nuevos sin historia. Hay 354 usuarios
+        repartidos entre las tres particiones: son los que llevan años en el sistema.
+  \item \textbf{Último por usuario}: realista en el orden, pero el 50,2\,\% del test se hizo el mismo día que el último
+        rating de train. Y el corte cae en medio de un empate de segundo en el 24,4\,\% de los usuarios (\S\ref{sec:primerdia}).
+  \item \textbf{Por usuarios}: el 100\,\% de los usuarios de test son nuevos para el modelo (como en Letterboxd), solo
+        0,15\,\% de los ratings de test son de películas sin entrenamiento, y 2\,051 de los 2\,069 usuarios de test son
+        elegibles para las métricas (99,1\,\%).
+\end{itemize}
+
+\subsection{El primer día: 59\,\% de usuarios sin orden real}\label{sec:primerdia}
+Recordatorio de la guía C: el 62,5\,\% de los ratings se hace en las primeras 24\,h del usuario, y el 59\,\% de los
+usuarios lo valora todo ese primer día. Los autores de MovieLens avisan de que las marcas de tiempo \emph{no} son la fecha
+de consumo y de que los usuarios introducen muchos ratings de golpe, rellenando lo que vieron antes \cite{harper2015}.
+Consecuencias para el split:
+\begin{itemize}
+  \item «Lo siguiente que ve el usuario» no es lo siguiente que \emph{vio}: es lo siguiente que \emph{puntuó}. Para el
+        59\,\% de usuarios, el orden interno es el de teclear la lista de recuerdos.
+  \item En el split «último por usuario» (10\,\%+10\,\%) el corte cae dentro de un empate de segundo en el
+        \textbf{17,7\,\%} de los usuarios (train/val) y en el \textbf{16,3\,\%} (val/test): en total, el 24,4\,\% de los
+        usuarios tiene al menos un corte «arbitrario» (desempata el \texttt{movieId}).
+  \item El primer día pesa menos en test que en train (36,7\,\% de los ratings de test frente al 68,4\,\% de los de train
+        en el split por último 10\,\%): se evalúa más con lo posterior, y eso es lo que queremos. Pero con C9 c (peso $\times0{,}75$
+        a las primeras 24\,h) el entrenamiento ya \emph{baja} el peso de esos ratings: la evaluación debe ir
+        \emph{sin ponderar}.
+\end{itemize}
+
+\begin{ojo}[¿«Cronológico» es más honesto?]
+Para los usuarios de varias sesiones, sí. Para el 59\,\% que lo hace todo de golpe, predecir «el final de la lista de
+recuerdos» no es predecir el futuro del gusto; es predecir un orden de tecleo. No es una trampa, pero sí es ruido: por eso
+conviene decir en el informe que el orden dentro del primer día no es información, y repetir el resultado con un split
+aleatorio dentro del usuario como control (pregunta D2).
+\end{ojo}
+
+\subsection{Fuga silenciosa: lo que se calcula con todos los datos}
+La fuga más peligrosa no es mezclar ratings, sino calcular estadísticas con test sin darse cuenta. En nuestra
+canalización hay tres: la media del usuario (C6), la frecuencia $P(i)$ de logQ (C13) y la máscara de C14. Con el split
+«último por usuario» medimos qué pasaría si se calcularan con todo:
+\begin{itemize}
+  \item $\bar r_u$ con todo el historial frente a solo train: diferencia absoluta media de 0,062 (p95 0,178, máx. 0,92).
+  \item El \textbf{1,46\,\%} de los ratings de train (36\,534) cambiaría de etiqueta positivo/no positivo, y el 1,25\,\% de
+        los de test.
+  \item 1\,730 películas tienen algún positivo en la muestra completa pero ninguno en train. Con $P(i)$ calculada con todo
+        se les daría un $\log P(i)$ finito que solo existe porque hay positivos en test (la correlación de Spearman entre
+        ambos conteos es 0,972: no es un desastre, es un sesgo pequeño pero injustificable).
+  \item La máscara de C14 (lo valorado \emph{en train}) no puede incluir lo valorado en test: sería quitar de la softmax
+        justo las películas que hay que acertar.
+\end{itemize}
+La regla: ajustar con train y transformar el resto (patrón \emph{fit/transform}). Vale también para vocabularios
+(directores, actores), la frecuencia mínima de E2 y las medias y desviaciones con las que se normalizan año y duración (E4).
+
+\subsection{Usuarios y películas que no están en train}
+\textbf{Usuarios}: en el split por usuarios, todos los de test son nuevos por construcción; el modelo solo los conoce por su historial
+(contexto). Eso exige una torre de usuario que lea el historial (bloque F). En el temporal global, el 86,3\,\% del test es de
+usuarios sin historia visible, y no se les puede evaluar con ninguna métrica de recomendación personalizada.
+
+\textbf{Películas}: en nuestros splits con usuarios en train, apenas el 0,15\,\%--0,43\,\% de los ratings de test son de películas
+que train no ha visto nunca (13,2\,\% en el temporal global). Con eso, \emph{no podemos medir el arranque en frío de películas}
+(la promesa de E1) con un split de ratings: tendríamos que retirar películas adrede (pregunta D8). Y ojo con la submuestra: el
+filtro de 20 ratings se aplicó al conjunto completo; en la submuestra, 15\,422 películas de las 23\,335 tienen menos de 20
+ratings en train, y 4\,354 no tienen ningún positivo ($P(i)$ solo existe por el suavizado $+1$). En el conjunto completo, con
+diez veces más usuarios, habrá menos películas en esa situación: el frío de la submuestra es peor que el real.
+
+\subsection{Métricas sobre el catálogo completo y qué $K$ usar}
+Las métricas son las de la guía C: Recall@$K$ y NDCG@$K$ \cite{liang2018} (esta última, premiando acertar arriba), sobre
+\emph{todo} el catálogo (22\,787 películas en la submuestra, quitando lo que el usuario ya tiene en su historial visible),
+no sobre 100 negativos al azar. Esa práctica de muestrear 100 negativos es la que usan SASRec y NCF por coste
+\cite{kang2018,he2017}, pero aquí el catálogo cabe: 2\,056 usuarios de validación $\times$ 22\,787 películas son 47 millones
+de productos escalares. Además de las dos de ranking, se miden \textbf{cobertura@$K$} (qué fracción del catálogo llega a
+aparecer en alguna lista) y \textbf{novedad@$K$} (por ejemplo, $-\log_2 P_{\text{train}}(i)$ media de lo recomendado).
+
+\textbf{¿Qué $K$?} El sistema tiene dos etapas: HNSW devuelve 200 candidatos y MMR deja 20. Cada etapa tiene su $K$:
+Recall@200 mide si la primera etapa trae los relevantes (es lo que entrena la Two-Tower); NDCG@20 y Recall@20 miden la lista final
+(y se calculan \emph{antes y después} del MMR). Un $K$ demasiado pequeño choca con cuántos relevantes hay: el \textbf{techo} de
+Recall@$K$ es la media de $\min(K,|R_u|)/|R_u|$ (el máximo que sacaría un modelo perfecto).
+\begin{center}
+\small
+\begin{tabular}{lrrrr}
+\toprule
+Techo de Recall@$K$ (\%) & Aleatorio & Último/usuario & Temporal global & Por usuarios \\
+\midrule
+$K=10$ & 87,5 & 88,7 & 55,1 & 77,1 \\
+$K=20$ & 95,4 & 96,0 & 71,1 & 89,9 \\
+$K=50$ & 99,3 & 99,4 & 86,9 & 97,8 \\
+$K=200$ & 100 & 100 & 98,5 & 100 \\
+\addlinespace
+Positivos por usuario elegible (mediana) & 5 & 5 & 20 & 9 \\
+\% de elegibles con $<3$ positivos en test & 24,9 & 20,0 & 10,3 & 6,5 \\
+Usuarios elegibles & 18\,759 & 19\,396 & 439 & 2\,051 \\
+\bottomrule
+\end{tabular}
+\end{center}
+En el split por usuarios, un Recall@10 perfecto es 77,1\,\%: si se compara Recall@10 con la literatura, hay que tener presente
+este techo. Con 2\,051 usuarios elegibles y 35\,019 positivos en test, el ruido por usuario es alto; hay que acompañar
+cada métrica con un intervalo (\emph{bootstrap} sobre usuarios).
+
+\subsection{Validación, tamaño de las particiones y semillas}
+\begin{itemize}
+  \item \textbf{Validación}: lo más coherente es una validación \emph{del mismo tipo que el test}: usuarios apartados (2\,056
+        en la submuestra) con su 80\,\% de historia y el 20\,\% a predecir, para parar el entrenamiento y elegir
+        hiperparámetros. Así validamos lo que vamos a usar (usuario nuevo con historial).
+  \item \textbf{Tamaño}: Mult-VAE aparta 10\,000 usuarios para validación y otros 10\,000 para test de 136\,677 (el 7,3\,\%
+        cada uno en ML-20M) \cite{liang2018}. Con 80/10/10 nuestro conjunto completo da $\approx$20\,000 usuarios de validación
+        y otros tantos de test.
+  \item \textbf{Semillas}: la semilla cambia qué usuarios caen en test. Con 5 semillas, en el split por usuarios los ratings de
+        test varían $66\,565\pm1\,569$, los usuarios elegibles $2\,005\pm38$ y el \% de test en películas con $<5$ ratings en train
+        $1{,}8\pm0{,}5$; en el aleatorio las cifras apenas se mueven ($315\,203\pm223$). Con tan pocos usuarios de test, un resultado
+        con una sola semilla se parece a una moneda; repetir con varias semillas es parte del método.
+  \item \textbf{Submuestra o completo}: la submuestra es útil para iterar; el conjunto completo da más usuarios de test
+        (menos ruido) y menos frío espurio. Los cortes temporales globales de ambos coinciden casi (julio--sept. de 2018 y
+        octubre de 2020).
+\end{itemize}
+
+% =====================================================================
+\section{Bloque E: qué sabe la torre de ítem de cada película}\label{sec:E}
+% =====================================================================
+
+\subsection{Para qué sirve la torre de ítem}
+La torre de ítem $\Psi_I$ convierte cada película en un vector $\mathbf v_i\in\mathbb R^{128}$. Los $\mathbf v_i$ no
+dependen del usuario: se calculan una vez para todo el catálogo y se guardan en el índice HNSW. El contenido es lo que
+permite que una película \emph{sin ratings} tenga un vector razonable: la razón para usar la arquitectura en el catálogo con cola larga
+\cite{yi2019}. Yi et al. describen una torre de ítem que codifica «una gran variedad de características de contenido» y
+la proponen precisamente para la escasez de datos y la distribución de potencias de los ítems.
+
+\subsection{Cobertura de cada feature (cifras medidas)}
+\begin{center}
+\small
+\begin{tabular}{lrr}
+\toprule
+Feature & \% películas & \% ratings \\
+\midrule
+Géneros de MovieLens & 99,0 & 99,9 \\
+Géneros de TMDB & 98,7 & 99,8 \\
+Géneros de alguna de las dos & 99,8 & 100,0 \\
+Sinopsis & 99,5 & 99,9 \\
+Director (\texttt{credits.csv}) & 84,8 & 97,0 \\
+Reparto (\texttt{credits.csv}) & 83,7 & 96,9 \\
+Palabras clave (\texttt{keywords.csv} o API) & 84,7 & 98,5 \\
+Año de estreno & 99,7 & 99,9 \\
+Duración (\texttt{runtime} de Kaggle) & 84,7 & --- \\
+\bottomrule
+\end{tabular}
+\end{center}
+«\% ratings» pondera cada película por sus ratings en la submuestra: las que más pesan en el entrenamiento están casi todas completas.
+
+\begin{ojo}[Las películas nuevas son justo las que no tienen créditos]
+\begin{center}
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+Estreno & Películas & \% director & \% reparto & \% keywords & \% sinopsis \\
+\midrule
+$\le$1989 & 6\,336 & 98,0 & 97,1 & 87,2 & 99,7 \\
+1990--99 & 3\,424 & 97,5 & 96,5 & 81,8 & 99,3 \\
+2000--09 & 5\,432 & 97,8 & 96,3 & 82,5 & 99,5 \\
+2010--16 & 4\,709 & 97,7 & 96,2 & 80,8 & 99,5 \\
+$\ge$2017 & 3\,361 & \textbf{9,2} & \textbf{9,0} & 91,9 & 99,2 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\texttt{credits.csv} es de Kaggle (2017): las películas posteriores tienen sinopsis y géneros (los pone la API de TMDB que
+descargamos) pero casi nunca director ni reparto, ni duración (8,9\,\%). Si director y reparto entran como feature, el modelo ve
+«desconocido» exactamente en las películas más recientes, que son las del arranque en frío. Hay que decidir qué hacer con
+ello (E9).
+\end{ojo}
+
+\subsection{Sinopsis: texto a vector}
+La sinopsis tiene una mediana de 46 palabras (p5: 16; p95: 114; el 0,5\,\% tiene menos de 10). Cabe sobradamente en la ventana de MiniLM
+(\texttt{all-MiniLM-L6-v2}, 256 \emph{word pieces}, $\approx$190 palabras). Fuente: 19\,804 de Kaggle, 3\,391 de la API, 13 corregidas a mano y 127
+sin fuente (sinopsis vacía).
+\begin{itemize}
+  \item \textbf{MiniLM}: red preentrenada que da un vector de 384 números por texto; se ejecuta una vez y se guarda
+        (\texttt{.npy}). 23\,335 $\times$ 384 son 17,9\,MB en \texttt{float16} y 35,8\,MB en \texttt{float32}.
+  \item \textbf{TF-IDF + SVD}: cuenta palabras ponderadas por su rareza y las comprime con una descomposición en
+        valores singulares; no usa red neuronal y es rapidísimo, pero no sabe que «car» y «automobile» son lo mismo.
+  \item Estas representaciones son \emph{del texto}, no de los ratings: ajustar el idf o la SVD con el catálogo entero no filtra
+        información de test (sí lo haría un vocabulario construido con los positivos). Para el experimento de películas retiradas
+        (D8), conviene ajustarlas sin esas películas, por pulcritud.
+\end{itemize}
+Sobre el modelo MiniLM no cito un artículo: no está en \texttt{docs/papers} y no lo he podido comprobar aquí; en la E2 habrá que
+referenciar el modelo de la biblioteca \emph{sentence-transformers} con su ficha oficial.
+
+\subsection{Géneros: la decisión B3 pendiente}
+\begin{center}
+\small
+\begin{tabular}{lrr}
+\toprule
+ & MovieLens & TMDB \\
+\midrule
+Géneros distintos en el catálogo & 19 & 23 \\
+Géneros por película (media) & 2,09 & 2,36 \\
+Películas con géneros & 99,0\,\% & 98,7\,\% \\
+Películas con géneros solo en esta fuente & 258 & 201 \\
+\bottomrule
+\end{tabular}
+\end{center}
+Sobre los 16 géneros comunes (Sci-Fi = Science Fiction, Children $\approx$ Family), en las 22\,838 películas que tienen las dos
+listas el Jaccard medio es \textbf{0,75} y las listas son idénticas solo en el \textbf{50,2\,\%}. Hay 38 películas sin géneros
+en ninguna. Solo MovieLens: Musical, Film-Noir, IMAX (un formato de proyección) y Children. Solo TMDB: Family, Music, History,
+Foreign (indica que no es estadounidense) y TV Movie.
+
+El argumento decisivo no es la cobertura: es la \textbf{inferencia}. Las películas nuevas (posteriores a 2023, y las
+de Letterboxd que no están en MovieLens) no tienen géneros de MovieLens, pero sí los tienen en TMDB. Si la torre se
+entrena con géneros de MovieLens, hay que reemplazarlos por otros al servir.
+
+\subsection{Créditos y palabras clave}
+\begin{itemize}
+  \item \textbf{Director}: 7\,827 directores distintos; el 40,5\,\% de las películas tiene un director con 5 películas o más en el catálogo.
+  \item \textbf{Reparto (3 primeros)}: 22\,100 actores distintos; solo 1\,114 salen en 10 películas o más, y cubren el 36,4\,\% de
+        las apariciones. Si se hace multi-hot de todos, la mayoría de las columnas aparecen una vez: el vector no generaliza.
+        Dos soluciones: frecuencia mínima (los demás van a \texttt{<OTRO>}) o \emph{feature hashing} a un tamaño fijo.
+  \item \textbf{Palabras clave}: aportan matiz temático («heist», «time travel») pero se solapan con la sinopsis; se pueden añadir
+        al texto antes de pasarlo por MiniLM (sin columnas nuevas).
+\end{itemize}
+
+\subsection{Año, duración y popularidad}
+\begin{itemize}
+  \item \textbf{Año y duración}: baratos y con buena cobertura (99,7\,\%; 84,7\,\%, con mediana de 100\,min y p5--p95 de 70--142). Hay que
+        normalizarlos con la media y desviación de train (o de catálogo: son metadatos), o agruparlos por décadas.
+  \item \textbf{Popularidad} (nº de ratings, \texttt{vote\_count}\dots): el 10\,\% de películas más vistas reúne el 78,8\,\% de los
+        ratings y allí la tasa de positivos es más alta (53,3\,\% de $r\ge4$ en el primer decil frente al 30--40\,\% del resto).
+        La popularidad ya entra en el entrenamiento por las frecuencias de las películas positivas; con logQ, el modelo estima
+        la verdadera $p(i\mid u)$ incluyendo la popularidad. Añadirla como feature da al modelo un atajo para acertar
+        recomendando siempre lo mismo, justo el problema que E1 dice combatir.
+  \item Una analogía: YouTube mete la «edad del ejemplo» como feature al entrenar y la pone a cero al servir, para que el modelo
+        no aprenda un sesgo del pasado \cite{covington2016}. La popularidad podría tratarse igual (un sesgo $b_i$ solo en
+        entrenamiento); no es lo mismo que logQ, pero comparte la idea.
+  \item Correlación de Spearman entre nº de ratings y año: $-0{,}14$. Las películas de los años 90 tienen la mediana más alta (370 ratings);
+        las de los 2010 y 2020, 70 y 56.
+\end{itemize}
+
+\subsection{Embedding de \texttt{movieId} frente a solo contenido}
+Un embedding por película (tabla $23\,335\times128$, casi 3 millones de parámetros) deja que el modelo memorice qué gusta
+a quién. Pero con $1\,491\,641$ positivos de train en la submuestra hay $\approx0{,}50$ positivos por parámetro, y 12\,872 películas
+tienen menos de 5 positivos (4\,354, ninguno): su embedding casi no se entrena y su representación sería ruido. La torre de ítem de
+YouTube combina identificador de vídeo y características de contenido \cite{yi2019}. Alternativas:
+\begin{itemize}
+  \item \textbf{Solo contenido}: funciona con películas nuevas, pero pierde la señal colaborativa fina.
+  \item \textbf{Contenido + ID}: lo mejor para las populares, pero para una película sin ID entrenado el vector depende de un embedding aleatorio.
+  \item \textbf{Contenido + ID con \emph{dropout} del ID}: se apaga el ID al azar durante el entrenamiento para que el contenido tenga
+        que sostener el vector; al servir, una película nueva usa un ID «desconocido».
+\end{itemize}
+No hay datos que decidan esto sin entrenar: es un experimento (con la prueba de D8).
+
+\subsection{Cómo se combinan, y normalizar}
+El vector de ítem sale de una red densa sobre la concatenación de [sinopsis (384), géneros (multi-hot), embeddings de director y
+actores, año, duración, ¿ID?]. Yi et al. encuentran que \textbf{normalizar con L2} los vectores de usuario y de ítem y añadir una temperatura
+mejora la entrenabilidad y la calidad \cite{yi2019}. Para nosotros hay una razón extra: el MMR usa la similitud $\text{Sim}(\mathbf v_i,\mathbf v_j)$
+(coseno) y HNSW busca por producto escalar: con vectores normalizados las dos cosas coinciden.
+
+\subsection{¿Congelado o ajustado?}
+MiniLM puede quedarse congelado (se precalcula, se cachea y no entra en el bucle de entrenamiento) o ajustarse (\emph{fine-tuning}). Ajustarlo
+obliga a recalcular los embeddings cada vez que se actualiza el modelo y complica leer los \texttt{.npy} desde C++ en inferencia. Un compromiso:
+congelado y una capa densa entrenable por encima.
+
+% =====================================================================
+\section{Las preguntas}
+% =====================================================================
+\rec\ = mi recomendación, no una decisión. Las preguntas D1--D3 y E1--E4 vienen de \texttt{docs/\allowbreak planning\_\allowbreak bloques\_\allowbreak D\_H.md}
+(15/10/2026), con su numeración y su texto; las demás las añado yo. «Afecta C» = decisiones de C relacionadas.
+
+\newcommand{\preg}[3]{\subsection*{#1 \normalfont\small\hfill #3}\textit{#2}\par}
+\newcommand{\afecta}[1]{\par\smallskip\noindent\textbf{Afecta C:} #1\par}
+
+% ---------------------------------------------------------------- D
+\subsection*{\large Bloque D: split}
+
+\preg{D1. Tipo de split}{¿Cómo partimos?}{F1, D4, D8}
+\begin{enumerate}[label=\alph*)]
+  \item Aleatorio por rating. El 98,9\,\% del test es anterior al último rating visible: infla las métricas.
+  \item Temporal global (test = después del 22/10/2020 aprox.). El 86,3\,\% del test es de usuarios sin historia; solo 439 usuarios elegibles.
+  \item Último de cada usuario (\emph{leave-last-out}). Estándar en NCF/SASRec. En el 24,4\,\% de usuarios el corte cae en un empate.
+  \item \rec\ Por usuarios: 80/10/10 de usuarios, 80\,\% de su historia como contexto y 20\,\% a predecir. Es el escenario Letterboxd.
+\end{enumerate}
+\textbf{Modelo}: (d) exige que la torre de usuario lea el historial (F1 b, no un \texttt{userId}). \textbf{Pérdida}: solo los ratings de usuarios
+de train generan ejemplos; el contexto de val/test no. \textbf{Evaluación}: solo en (d) todos los usuarios de test son nuevos y hay
+2\,051 elegibles. \textbf{E2}: etapa \texttt{03\_split} y tabla \texttt{usuario-grupo} como artefacto.
+\afecta{C1 b (los positivos de test dependen del split), C5 a (los ejemplos son solo de los usuarios de train), C8 b, C14 c (la máscara se construye con el historial visible).}
+
+\preg{D2. Orden dentro del usuario}{En los usuarios de test, ¿el 80/20 es cronológico o aleatorio?}{D5, C9}
+\begin{enumerate}[label=\alph*)]
+  \item \rec\ Cronológico (primer 80\,\% como contexto, último 20\,\% a predecir), con desempate fijo por \texttt{movieId}.
+  \item Aleatorio dentro de cada usuario.
+  \item Cronológico y, como control, repetir con (b).
+\end{enumerate}
+\textbf{Evaluación}: en el split por usuarios, el 62,2\,\% de los ratings a predecir se hizo el mismo día que el último de contexto; el
+62,5\,\% de todos los ratings es del primer día. \textbf{Pérdida}: ninguna. \textbf{E2}: parámetro \texttt{--orden \{cronologico,aleatorio\}}.
+(c) cuesta una segunda pasada; solo se justifica si la diferencia es grande.
+\afecta{C9 c (el peso 0,75 al primer día es de entrenamiento; la evaluación va sin pesos), C12 a.}
+
+\preg{D3. Estadísticas solo con train}{¿Qué se calcula solo con los datos de entrenamiento?}{C6, C13, E2, E4}
+\begin{enumerate}[label=\alph*)]
+  \item \rec\ Todo lo «aprendido de los datos» se ajusta con train (patrón \emph{fit/transform}); para el modelo final, se vuelve a ajustar con train+val.
+  \item Siempre solo con train, también en el modelo final.
+  \item Con todo: no.
+\end{enumerate}
+\textbf{Qué entra}: $\bar r_u$ (C6), $P(i)$ (C13), máscara (C14), vocabulario y frecuencia mínima de directores/actores (E2),
+media y desviación de año y duración (E4). \textbf{Fuga medida} (si se hiciera con todo): 1,46\,\% de etiquetas de train cambian y
+1\,730 películas reciben un $P(i)$ gracias a test. \textbf{E2}: cada transformador guarda sus parámetros ajustados en un artefacto.
+\afecta{C6 a, C13 b, C14 c.}
+
+\preg{D4. Validación}{¿Con qué se eligen hiperparámetros y se para el entrenamiento?}{D1, D7}
+\begin{enumerate}[label=\alph*)]
+  \item \rec\ Usuarios de validación apartados (como el test: 80\,\% contexto, 20\,\% a predecir), 10\,\% de los usuarios.
+  \item Un 10\,\% de los ratings de train, al azar.
+  \item Validación cruzada por usuarios (k carpetas).
+  \item Validar solo con una submuestra de los usuarios de validación (más rápido).
+\end{enumerate}
+\textbf{Evaluación}: criterio de parada, Recall@200 o NDCG@20 sobre el catálogo completo (47 millones de productos escalares por pasada en la
+submuestra, asumible). (b) mezcla el futuro en el entrenamiento y no valida «usuario nuevo». (c) multiplica el coste por $k$.
+\afecta{C7 c (la validación también tiene las dos definiciones de relevante), C8 b.}
+
+\preg{D5. Primer día y empates}{¿Qué hacemos con el 59\,\% de usuarios que lo valoran todo el primer día?}{C9, D2}
+\begin{enumerate}[label=\alph*)]
+  \item \rec\ Nada especial en el split: aceptar el orden y desempatar con \texttt{movieId}; documentar que el orden dentro del primer día no es información.
+  \item Que el objetivo sean solo ratings posteriores a las primeras 24\,h (solo usuarios con varias sesiones).
+  \item Para los usuarios de «un solo día», 80/20 aleatorio; para el resto, cronológico.
+  \item Quitar a los usuarios cuyo corte cae en un empate de segundo (24,4\,\%).
+\end{enumerate}
+\textbf{Evaluación}: (b) deja un test que mide otra cosa (ya no es Letterboxd) y menos usuarios; (d) tira casi un cuarto de los usuarios. (c)
+es defendible pero añade una regla que explicar. \textbf{Pérdida}: ya se trata con C9 c.
+\afecta{C9 c, C12 a.}
+
+\preg{D6. Métricas y $K$}{¿Qué se mide y con qué $K$?}{C7, F, MMR}
+\begin{enumerate}[label=\alph*)]
+  \item Recall@20 y NDCG@20.
+  \item Recall@200 y NDCG@20.
+  \item \rec\ $K\in\{10,20,50,200\}$ más cobertura@20 y novedad@20, siempre sobre el catálogo completo; principal: Recall@200 (retrieval) y NDCG@20 (lista final, antes y después del MMR).
+  \item Métricas con 100 negativos muestreados.
+\end{enumerate}
+\textbf{Evaluación}: techo de Recall@10 en el split por usuarios: 77,1\,\%; @20: 89,9\,\%; @200: 100\,\%. (d) no es comparable entre modelos
+(guía C). \textbf{Pérdida}: ninguna, pero las métricas se calculan con las dos definiciones de C7 c. \textbf{E2}: intervalos de confianza por \emph{bootstrap} de usuarios.
+\afecta{C7 c, C8 b (los usuarios sin positivos salen), C14 c (en inferencia se excluye lo ya valorado).}
+
+\preg{D7. Tamaño de las particiones}{¿Qué fracción de usuarios para val y test?}{D1, D9}
+\begin{enumerate}[label=\alph*)]
+  \item \rec\ 80/10/10 de usuarios (en la submuestra, $\approx$2\,000 usuarios en val y en test; en el completo, $\approx$20\,000).
+  \item 90/5/5.
+  \item Un número fijo de usuarios (p.\,ej. 10\,000 como en Mult-VAE \cite{liang2018}) en el conjunto completo.
+\end{enumerate}
+\textbf{Evaluación}: con 2\,051 elegibles y 35\,019 positivos hay ruido (la semilla mueve $\pm38$ usuarios elegibles); más usuarios de test = menos ruido, a costa de
+menos entrenamiento. \textbf{Modelo}: con (a) hay 15\,960 usuarios de entrenamiento en la submuestra.
+\afecta{C5 a, C8 b.}
+
+\preg{D8. Arranque en frío}{¿Qué hacemos con películas y usuarios de test sin historia en train?}{E6, D1}
+\begin{enumerate}[label=\alph*)]
+  \item Ignorarlo (dejarlos en el test tal cual).
+  \item Quitar del test las películas sin train (solo el 0,15\,\% en el split por usuarios).
+  \item Reportar aparte: métricas globales y métricas sobre ratings en películas con $<5$ (o $<20$) en train.
+  \item \rec\ c y, además, un experimento de películas retiradas: quitar todos los ratings de train de un 5\,\% de películas y medir sobre ellas.
+\end{enumerate}
+\textbf{Evaluación}: con el split por usuarios solo el 1,54\,\% del test es de películas con $<5$ ratings en train: sin el experimento d, la promesa
+de arranque en frío de E1 no se puede probar. \textbf{Usuarios}: Letterboxd ya es el escenario del split (d) de D1. \textbf{Modelo}: la prueba decide E6.
+\afecta{C13 b (las películas sin positivos tienen $P(i)$ solo por el $+1$), C11 b.}
+
+\preg{D9. Submuestra o completo}{¿Con qué conjunto se desarrolla y con cuál se informa?}{D7, D10}
+\begin{enumerate}[label=\alph*)]
+  \item Submuestra para todo, completo solo al final.
+  \item \rec\ Submuestra para desarrollar y, antes de cada entrega, repetir las 2--3 configuraciones finales en el completo.
+  \item Completo desde el principio.
+\end{enumerate}
+\textbf{Evaluación}: el frío de la submuestra es peor que el real (15\,422 de 23\,335 películas con $<20$ ratings en train); los cortes
+temporales coinciden. \textbf{E2}: parámetro \texttt{--muestra}.
+\afecta{C13 b, C8 b.}
+
+\preg{D10. Semillas y reproducibilidad}{¿Cómo hacemos el split reproducible?}{D7, H7}
+\begin{enumerate}[label=\alph*)]
+  \item Una semilla fija (42).
+  \item \rec\ Asignar cada usuario a su grupo con una función hash estable de \texttt{userId} y la semilla; guardar la tabla; repetir los resultados finales con 5 semillas y dar media y desviación.
+  \item Semilla distinta para cada componente (split, inicialización, orden de lotes).
+\end{enumerate}
+\textbf{Evaluación}: con 5 semillas, los ratings de test varían $66\,565\pm1\,569$ (usuarios) y $315\,203\pm223$ (aleatorio). \textbf{E2}: la tabla de grupos y
+todos los umbrales van en el archivo de configuración.
+\afecta{C1 b, C13 b (todo lo que depende de train cambia con la semilla).}
+
+% ---------------------------------------------------------------- E
+\subsection*{\large Bloque E: features de la torre de película}
+
+\preg{E1. Embedding de la sinopsis}{¿Cómo se convierte el texto en vector?}{E8}
+\begin{enumerate}[label=\alph*)]
+  \item \rec\ MiniLM (\texttt{all-MiniLM-L6-v2}, $d=384$), precalculado.
+  \item TF-IDF + SVD.
+  \item Ambos (ablación).
+\end{enumerate}
+\textbf{Modelo}: la sinopsis ocupa 384 de las entradas de la torre; en \texttt{float16} son 17,9\,MB para 23\,335 películas, en \texttt{float32}, 35,8\,MB. Mediana de 46
+palabras (cabe en la ventana). \textbf{Pérdida/evaluación}: ninguna directa; (c) da una comparación gratis. \textbf{E2}: caché \texttt{.npy}. 127 sinopsis vacías: vector de ceros y bandera.
+\afecta{C13 b (el vector solo describe contenido: no usa ratings).}
+
+\preg{E2. Créditos}{¿Qué parte de director y reparto?}{E9, D3}
+\begin{enumerate}[label=\alph*)]
+  \item Nada.
+  \item \rec\ Director + 3--5 primeros actores, con frecuencia mínima (p.\,ej. $\ge5$ películas; el resto a \texttt{<OTRO>}) o \emph{hashing}.
+  \item Todo el reparto y el equipo.
+\end{enumerate}
+\textbf{Modelo}: 7\,827 directores y 22\,100 actores (solo 1\,114 con $\ge10$ películas; 36,4\,\% de las apariciones); sin frecuencia mínima, columnas que casi nunca se entrenan. Cobertura: 84,8\,\% de
+películas (97,0\,\% de ratings), pero 9,2\,\% de las posteriores a 2017. \textbf{D3}: la frecuencia mínima y el vocabulario se cuentan con las películas de train.
+\afecta{C13 b (las películas con $P(i)=0$ dependerán de estas features), C11 b.}
+
+\preg{E3. Palabras clave}{¿Se incluyen?}{E1}
+\begin{enumerate}[label=\alph*)]
+  \item No.
+  \item \rec\ Añadirlas al texto antes de MiniLM (sin features nuevas).
+  \item Multi-hot con frecuencia mínima.
+\end{enumerate}
+\textbf{Cobertura}: 84,7\,\% de las películas (98,5\,\% de los ratings); el 91,9\,\% de las posteriores a 2017 (más que los créditos, porque la API de TMDB sí las devuelve).
+\textbf{Modelo}: (b) no cambia la arquitectura; (c) añade otro vocabulario con la misma pega que E2.
+\afecta{---}
+
+\preg{E4. Features numéricas}{¿Año, duración, popularidad, \texttt{vote\_average}?}{D3, C13}
+\begin{enumerate}[label=\alph*)]
+  \item \rec\ Año y duración (normalizados con train o por décadas), sin popularidad ni \texttt{vote\_average}.
+  \item Todas.
+  \item (a) más la popularidad solo como sesgo de entrenamiento.
+  \item Ninguna.
+\end{enumerate}
+\textbf{Modelo}: año 99,7\,\% de cobertura; duración 84,7\,\% (8,9\,\% en las $\ge2017$). La popularidad empuja al modelo a recomendar lo popular: el 10\,\% más visto reúne el 78,8\,\% de los ratings, y
+con C13 b logQ ya trae esa información a la pérdida. \texttt{vote\_average} viene de otros usuarios de TMDB y mezcla calidad con popularidad.
+\afecta{C13 b (logQ y popularidad como feature se pisan), C1 b.}
+
+\preg{E5. Géneros (decisión B3)}{¿MovieLens o TMDB?}{E9, inferencia}
+\begin{enumerate}[label=\alph*)]
+  \item Solo MovieLens (19 géneros; 99,0\,\% de cobertura).
+  \item Solo TMDB (23 géneros; 98,7\,\%).
+  \item \rec\ Unión: TMDB primero y MovieLens como relleno (hay 258 películas con géneros solo en MovieLens), quitando IMAX (formato) y Foreign (no es un género); vocabulario común de 16 mapeado.
+  \item Solo los 16 géneros comunes.
+\end{enumerate}
+\textbf{Modelo}: Jaccard medio 0,75; listas idénticas en el 50,2\,\%. Las películas nuevas y las de Letterboxd solo tendrán géneros de TMDB: entrenar con géneros de MovieLens crea una discrepancia entre entrenamiento y servicio.
+38 películas sin géneros en ninguna: vector de ceros y bandera.
+\afecta{C3 c (las anti-preferencias de la torre de usuario usan los géneros de las películas), C10 a.}
+
+\preg{E6. Identificador de película}{¿Embedding de \texttt{movieId} o solo contenido?}{D8, F1}
+\begin{enumerate}[label=\alph*)]
+  \item Solo contenido.
+  \item Contenido + embedding de ID.
+  \item \rec\ Contenido + ID con \emph{dropout} del ID (y un ID «desconocido» para películas nuevas).
+\end{enumerate}
+\textbf{Modelo}: tabla de 2\,986\,880 parámetros frente a 1\,491\,641 positivos de train; 12\,872 películas con $<5$ positivos y 4\,354 con ninguno. \textbf{Evaluación}: se decide con el experimento de D8 d; una
+película nueva sin ID entrenado solo se sostiene con contenido. \textbf{Pérdida}: logQ no cambia, pero el ID permite que el modelo memorice la popularidad.
+\afecta{C13 b, C5 a (sin tope por usuario, el ID aprende sobre todo de los muy activos).}
+
+\preg{E7. Combinación y normalización}{¿Cómo se juntan las features y se normalizan los vectores?}{E1, MMR}
+\begin{enumerate}[label=\alph*)]
+  \item Concatenar y una red densa; sin normalizar $\mathbf v_i$.
+  \item \rec\ Concatenar y red densa; normalizar con L2 $\mathbf u$ y $\mathbf v_i$ y usar una temperatura $T$ (\cite{yi2019}).
+  \item Normalizar solo $\mathbf v_i$.
+\end{enumerate}
+\textbf{Modelo y pérdida}: la temperatura es un hiperparámetro de la softmax (D4). \textbf{Inferencia}: con vectores normalizados, el producto escalar de HNSW y el coseno del MMR coinciden.
+\afecta{C1 b, C13 b (se resta $\log P(i)$ a la puntuación con $T$).}
+
+\preg{E8. Encoder congelado o ajustado}{¿Se entrena MiniLM?}{E1}
+\begin{enumerate}[label=\alph*)]
+  \item \rec\ Congelado, con una capa densa entrenable encima.
+  \item Ajustar la última(s) capa(s).
+  \item Ajustar todo.
+\end{enumerate}
+\textbf{Coste}: (a) no entra en el bucle de entrenamiento y se lee con \texttt{.npy} desde C++; (b)/(c) obligan a recalcular los 23\,335 vectores tras cada cambio.
+\afecta{---}
+
+\preg{E9. Datos que faltan}{¿Qué hacemos con las películas sin director, reparto o duración (posteriores a 2017)?}{E2, E4}
+\begin{enumerate}[label=\alph*)]
+  \item \rec\ Token «desconocido» y una bandera \texttt{falta\_credito}; con \emph{dropout} de los créditos al entrenar (para que el modelo vea películas sin ellos).
+  \item Descargar los créditos que faltan con la API de TMDB (como se hizo con las sinopsis).
+  \item Excluir esas películas del entrenamiento.
+\end{enumerate}
+\textbf{Modelo}: solo el 9,2\,\% de las películas de 2017 en adelante tienen director; sin tratamiento, la torre aprende «sin director = reciente». \textbf{Datos}: (b) cuesta una descarga
+(3\,361 películas) pero cambia la cobertura; se puede hacer después. \textbf{Evaluación}: se mira en el experimento de D8 d.
+\afecta{C11 b, C13 b.}
+
+% ---------------------------------------------------------------- dependencias
+\subsection*{Resumen de dependencias}
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{lYY}
+\toprule
+Pregunta & Depende de\dots & Porque\dots \\
+\midrule
+D1 & F1 (y C1) & el split por usuarios exige torre de usuario basada en historial \\
+D2 & C9 & el orden en el primer día es el de tecleo \\
+D3 & C6, C13, C14 & definen qué se calcula con train \\
+D4, D6 & C7, C8 & las dos definiciones de relevante y los usuarios elegibles \\
+D5 & C9 & el 59\,\% de usuarios en un solo día \\
+D8 & E6, D1 & el frío de películas solo se mide con películas retiradas \\
+E1, E2, E3 & D3 & vocabularios, frecuencias mínimas, idf: solo con train \\
+E4 & C13 & logQ y popularidad como feature se pisan \\
+E5 & B3 & fija la decisión B3 \\
+E6 & D8, F1 & decide si la torre funciona con solo contenido \\
+E9 & E2, E4 & las películas posteriores a 2017 carecen de créditos \\
+\bottomrule
+\end{tabularx}
+\end{center}
+Orden propuesto: (1) D1, F1 y E6 a la vez (qué sabe cada torre y con qué se mide); (2) D3 y E1--E4 (qué se ajusta y con qué datos);
+(3) D2, D4--D5 y D7 (detalles del split y empates); (4) E5, E7--E9 (géneros, normalización y datos que faltan); (5) D6, D8--D10 al escribir
+el pipeline de evaluación y el archivo de configuración.
+
+% =====================================================================
+\section*{Glosario}
+\addcontentsline{toc}{section}{Glosario}
+% =====================================================================
+\begin{description}[leftmargin=3.2cm, style=nextline, itemsep=1pt]
+  \item[Arranque en frío] Un usuario o una película sin historia en train.
+  \item[Contexto / \emph{fold-in}] Parte del historial de un usuario de test que se da al modelo para construir su vector; no se predice.
+  \item[Elegible] Usuario de test con $\ge1$ positivo en test y $\ge1$ en su historial visible.
+  \item[\emph{Fit/transform}] Ajustar una transformación con train y aplicar el resultado ya fijado al resto.
+  \item[Fuga (\emph{leakage})] Usar en entrenamiento información que solo existe en test.
+  \item[Generalización fuerte] Los usuarios de test no están en el entrenamiento.
+  \item[\emph{Hashing}] Reducir un vocabulario enorme a un tamaño fijo con una función hash.
+  \item[\emph{Leave-last-out}] Último rating de cada usuario a test.
+  \item[MiniLM] Red preentrenada que convierte un texto en un vector de 384 números.
+  \item[Techo de Recall@$K$] Máximo Recall@$K$ alcanzable: media de $\min(K,|R_u|)/|R_u|$.
+  \item[TF-IDF / SVD] Ponderación de palabras por su rareza y compresión por valores singulares.
+\end{description}
+
+\begin{thebibliography}{99}
+\bibitem{carbonell1998} J.~Carbonell, J.~Goldstein. \emph{The Use of MMR, Diversity-Based Reranking for Reordering Documents and Producing Summaries}. SIGIR, 1998.
+\bibitem{covington2016} P.~Covington, J.~Adams, E.~Sargin. \emph{Deep Neural Networks for YouTube Recommendations}. RecSys, 2016.
+\bibitem{harper2015} F.~M.~Harper, J.~A.~Konstan. \emph{The MovieLens Datasets: History and Context}. ACM TiiS, 2015.
+\bibitem{he2017} X.~He, L.~Liao, H.~Zhang, L.~Nie, X.~Hu, T.-S.~Chua. \emph{Neural Collaborative Filtering}. WWW, 2017.
+\bibitem{kang2018} W.-C.~Kang, J.~McAuley. \emph{Self-Attentive Sequential Recommendation}. ICDM, 2018.
+\bibitem{liang2018} D.~Liang, R.~G.~Krishnan, M.~D.~Hoffman, T.~Jebara. \emph{Variational Autoencoders for Collaborative Filtering}. WWW, 2018.
+\bibitem{steck2019} H.~Steck. \emph{Embarrassingly Shallow Autoencoders for Sparse Data}. WWW, 2019.
+\bibitem{yi2019} X.~Yi, J.~Yang, L.~Hong, D.~Z.~Cheng, L.~Heldt, A.~Kumthekar, Z.~Zhao, L.~Wei, E.~Chi. \emph{Sampling-Bias-Corrected Neural Modeling for Large Corpus Item Recommendations}. RecSys, 2019.
+\end{thebibliography}
+
+\end{document}
