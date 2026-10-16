@@ -1,0 +1,611 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[spanish,es-nodecimaldot,es-noshorthands]{babel}
+\usepackage{amsmath, amssymb, mathtools}
+\usepackage[left=2.3cm,right=2.3cm,top=2.3cm,bottom=2.3cm]{geometry}
+\usepackage{microtype}
+\usepackage{parskip}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage[most]{tcolorbox}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
+\usepackage{listings}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue!60!black, urlcolor=blue!60!black, citecolor=green!45!black}
+
+\addto\captionsspanish{\renewcommand{\tablename}{Tabla}}
+\setlist{itemsep=2pt, topsep=3pt}
+\renewcommand{\arraystretch}{1.18}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\newtcolorbox{idea}[1][Idea clave]{colback=blue!4, colframe=blue!45!black, fonttitle=\bfseries, title=#1, boxrule=0.6pt, arc=2pt}
+\newtcolorbox{ojo}[1][Ojo]{colback=orange!6, colframe=orange!70!black, fonttitle=\bfseries, title=#1, boxrule=0.6pt, arc=2pt}
+\newtcolorbox{ejemplo}[1][Ejemplo]{colback=green!4, colframe=green!40!black, fonttitle=\bfseries, title=#1, boxrule=0.6pt, arc=2pt}
+
+\lstset{basicstyle=\ttfamily\small, columns=fullflexible, keepspaces=true, breaklines=true,
+  frame=single, rulecolor=\color{black!25}, backgroundcolor=\color{black!3}, xleftmargin=2pt, xrightmargin=2pt,
+  keywordstyle=\color{blue!60!black}\bfseries, commentstyle=\color{green!40!black}\itshape,
+  stringstyle=\color{orange!60!black}, showstringspaces=false,
+  literate={á}{{\'a}}1 {é}{{\'e}}1 {í}{{\'i}}1 {ó}{{\'o}}1 {ú}{{\'u}}1 {ñ}{{\~n}}1 {Á}{{\'A}}1 {É}{{\'E}}1
+           {→}{{$\to$}}1 {×}{{$\times$}}1 {≤}{{$\le$}}1 {λ}{{$\lambda$}}1 {·}{{$\cdot$}}1}
+\lstdefinestyle{c}{language=C, morekeywords={restrict,int64_t,int32_t,size_t}}
+\lstdefinestyle{py}{language=Python}
+\newcommand{\cod}[1]{\texttt{#1}}
+
+\title{\textbf{El motor de inferencia en C}\\[4pt]
+\large Guía para escribir la decisión H10 del recomendador de CPIA}
+\author{Arnau Montull \quad para \quad Uriel Martínez}
+\date{16 de octubre de 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent Esta guía explica qué tiene que hacer el motor de inferencia en C del recomendador (H10), en qué formato le
+llegarán los datos desde Python, qué funciones escribir (con firma y pseudocódigo), cómo paralelizarlo con OpenMP,
+cómo comprobar que da lo mismo que numpy y cómo medirlo para las entregas E2/E3. \emph{No} es la implementación: la
+escribes tú. Todo está en C puro (nada de C++), compila con el gcc 13.1 de Simply Fortran y se llama desde Python con
+\cod{ctypes}. Las cifras salen de la submuestra de desarrollo (\cod{reports/pipeline\_dev.md}): $N = 23\,335$
+películas, $d = 128$. El modelo PyTorch aún no existe, así que el formato de exportación (sección~\ref{sec:formato}) es
+una \textbf{propuesta provisional}.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% =====================================================================
+\section{Qué hace el motor y qué no}
+% =====================================================================
+
+\subsection{El reparto}
+\begin{itemize}
+  \item \textbf{Entrenamiento}: en PyTorch (H8, en Colab o CPU). Aún no existe. Produce los vectores de película
+        $\mathbf{v}_i$ y los pesos del MLP de la torre de usuario.
+  \item \textbf{Motor en C (esto)}: solo \emph{inferencia}. Entrada: el historial de un usuario. Salida: 20 películas.
+        No entrena, no calcula gradientes, no lee texto ni sinopsis: los $\mathbf{v}_i$ ya vienen calculados.
+  \item \textbf{HNSW}: no lo escribes en C. Con 23\,335 películas la búsqueda exacta ya cumple los $< 5$\,ms de la E1
+        (H9). HNSW se mide aparte con \cod{hnswlib} en Python, como comparación (también tuyo, sección~\ref{sec:hnsw}).
+\end{itemize}
+
+\begin{idea}[Lo prometido en la E1]
+200 candidatos en $< 5$\,ms, reordenación MMR hasta 20, OpenMP y SIMD, y benchmarks en CPU. La E1 hablaba de 84\,000
+películas; tras la limpieza (mín.~20 ratings) son 23\,335, así que todo es $3{,}6\times$ más barato de lo que
+escribimos allí.
+\end{idea}
+
+\subsection{El flujo completo}
+\begin{center}
+\begin{tikzpicture}[node distance=4mm and 6mm, every node/.style={font=\small},
+  caja/.style={draw, rounded corners=2pt, align=center, minimum height=9mm, fill=#1},
+  caja/.default=white, flecha/.style={-{Stealth[length=2.2mm]}, thick}]
+  \node[caja=blue!8] (A) {Bolsa A\\positivos+neutras};
+  \node[caja=blue!8, below=of A] (B) {Bolsa B\\notas bajas};
+  \node[caja=blue!18, right=of A] (mA) {$\bar{\mathbf{a}}$ (128)\\media pond.};
+  \node[caja=blue!18, right=of B] (mB) {$\bar{\mathbf{b}}$ (128)\\media pond.};
+  \node[caja=orange!12, right=8mm of mA, yshift=-6.5mm] (x) {$\mathbf{x}$ = [$\bar{\mathbf{a}}$, $\bar{\mathbf{b}}$,\\banderas, $\log n$]};
+  \node[caja=green!15, right=of x] (mlp) {MLP 2 capas\\ReLU};
+  \node[caja=green!25, right=of mlp] (u) {L2 $\to \mathbf{u}$\\(128)};
+  \draw[flecha] (A) -- (mA); \draw[flecha] (B) -- (mB);
+  \draw[flecha] (mA) -- (x); \draw[flecha] (mB) -- (x);
+  \draw[flecha] (x) -- (mlp); \draw[flecha] (mlp) -- (u);
+  \node[caja=red!8, below=14mm of mlp, xshift=-30mm] (s) {scores = $V\mathbf{u}$\\($N$)};
+  \node[caja=red!8, right=of s] (m) {máscara\\(C14)};
+  \node[caja=red!15, right=of m] (t) {top-200\\exacto};
+  \node[caja=red!25, right=of t] (r) {MMR\\$\to$ 20};
+  \draw[flecha] (u.south) |- ++(0,-5mm) -| (s.north);
+  \draw[flecha] (s) -- (m); \draw[flecha] (m) -- (t); \draw[flecha] (t) -- (r);
+\end{tikzpicture}
+\end{center}
+
+En fórmulas, para un usuario con bolsa A (índices $j$, pesos $w_j$) y bolsa B (índices $k$, pesos $w_k$):
+\begin{align*}
+\bar{\mathbf{a}} &= \frac{\sum_j w_j \mathbf{v}_j}{\sum_j w_j}, \qquad
+\bar{\mathbf{b}} = \frac{\sum_k w_k \mathbf{v}_k}{\sum_k w_k}\quad(\text{o }\mathbf{0}\text{ si la bolsa está vacía}),\\
+\mathbf{x} &= [\bar{\mathbf{a}},\ \bar{\mathbf{b}},\ f_A,\ f_B,\ \log(1+n)] \in \mathbb{R}^{d_0},\\
+\mathbf{h} &= \mathrm{ReLU}(W_1\mathbf{x} + \mathbf{b}_1),\qquad \mathbf{z} = W_2\mathbf{h} + \mathbf{b}_2,\qquad
+\mathbf{u} = \mathbf{z}/\lVert\mathbf{z}\rVert_2,\\
+s_i &= \langle \mathbf{v}_i, \mathbf{u}\rangle\ (i = 1..N),\qquad s_i = -\infty \text{ si $i$ ya está valorada},
+\end{align*}
+y luego top-200 de $s$ y MMR sobre esos 200. Las bolsas son las de F4: en A entran positivos (peso C4$\times$C9) y
+neutras (peso $0{,}25\times$C9); en B las notas bajas (peso C9). Los $\mathbf{v}_j$ de las bolsas son los mismos de la
+torre de ítem (F6).
+
+\begin{ojo}[Detalles que dependen del modelo]
+Qué banderas hay exactamente ($f_A$, $f_B$ = «bolsa vacía»), si $n$ es el tamaño total o de cada bolsa, y si hay
+ReLU tras la segunda capa, lo fijará el modelo PyTorch. Por eso el motor \emph{no} lo debe codificar a fuego: lo lee
+del \cod{meta.txt} (sección~\ref{sec:formato}). Aquí asumimos $d_0 = 128+128+2+1 = 259$.
+\end{ojo}
+
+\subsection{Cifras de partida (dev)}
+\begin{center}
+\begin{tabular}{lrr}
+\toprule
+& p50 & p99 (máx.) \\
+\midrule
+Tamaño de la bolsa A (train+val) & 57 & 997 (4\,237) \\
+Tamaño de la bolsa B (train+val) & 8 & 184 (944) \\
+Usuarios con B vacía (train+val) & \multicolumn{2}{r}{951 de 20\,085} \\
+\bottomrule
+\end{tabular}
+\end{center}
+Las medias de las bolsas son baratas ($\sim 60\times128$ sumas); lo caro es $V\mathbf{u}$: $23\,335\times128 \approx
+3$\,M multiplicaciones-suma.
+
+% =====================================================================
+\section{Formato de los datos que exportará Python}\label{sec:formato}
+% =====================================================================
+
+\begin{ojo}[Provisional]
+Todo este apartado es una \textbf{propuesta de contrato}. Se cerrará cuando exista el modelo. Mientras tanto, genera
+estos archivos con datos \emph{aleatorios} desde Python (sección~\ref{sec:valid}) y programa contra ellos.
+\end{ojo}
+
+\subsection{Reglas generales}
+\begin{itemize}
+  \item Binarios crudos, sin cabecera, \textbf{little-endian} (lo normal en x86) y \textbf{row-major} (orden C, el de
+        numpy por defecto). Se escriben con \cod{arr.astype('<f4').tofile(ruta)}.
+  \item Tipos: \cod{float32} (\cod{.f32}) para vectores y pesos; \cod{int32} (\cod{.i32}) para índices de película;
+        \cod{int64} (\cod{.i64}) para los \cod{indptr} de CSR (con el conjunto completo pueden pasar de $2^{31}$).
+  \item Un \cod{meta.json} (para humanos y Python) y un \cod{meta.txt} con lo mismo en \cod{clave = valor}, para no
+        tener que parsear JSON en C.
+\end{itemize}
+
+\subsection{Archivos}
+\begin{center}
+\begin{tabularx}{\linewidth}{llY}
+\toprule
+Archivo & Forma, tipo & Contenido \\
+\midrule
+\cod{V.f32} & $[N\times d]$ float32 & $\mathbf{v}_i$ ya normalizados (norma 1, E7). Fila $i$ = película de índice interno $i$. \\
+\cod{W1.f32}, \cod{b1.f32} & $[h_1\times d_0]$, $[h_1]$ & Primera capa. Ojo: \cod{nn.Linear} guarda \cod{weight} como [salida $\times$ entrada]; se exporta tal cual. \\
+\cod{W2.f32}, \cod{b2.f32} & $[d\times h_1]$, $[d]$ & Segunda capa. \\
+\cod{movie\_ids.i32} & $[N]$ & \cod{movieId} de MovieLens de cada índice interno (solo para mostrar). \\
+\cod{usuario\_A\_idx.i32}, \cod{usuario\_A\_w.f32} & $[n_A]$ & Bolsa A del usuario de ejemplo. \\
+\cod{usuario\_B\_idx.i32}, \cod{usuario\_B\_w.f32} & $[n_B]$ & Bolsa B. \\
+\cod{usuario\_excl.i32} & $[n_E]$ & Lo ya valorado (máscara C14/F8). \\
+\cod{lote\_*} (opcional) & CSR & Varios usuarios: \cod{indptr.i64} $[B+1]$, \cod{idx.i32}, \cod{w.f32}, para A, B y excl. \\
+\cod{ref\_u.f32}, \cod{ref\_scores.f32}, \cod{ref\_top.i32} & & Salidas de referencia de numpy para validar. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{\texttt{meta.txt}}
+\begin{lstlisting}
+# contrato de exportación v0 (provisional)
+version = 0
+N = 23335
+d = 128
+d0 = 259           # dimension de la entrada del MLP
+h1 = 256           # capa oculta (provisional)
+relu_final = 0     # 1 si hay ReLU tras la segunda capa
+orden_entrada = media_A,media_B,vacia_A,vacia_B,log1p_n
+n_para_log = A+B   # que n entra en log(1+n)
+normalizado_V = 1
+lambda_mmr = 0.7
+\end{lstlisting}
+El orden de la entrada es lo más delicado: si C concatena en otro orden que PyTorch, todo «funciona» y da basura.
+Por eso va escrito en el meta y el motor debe comprobar que coincide con el que espera (y abortar si no).
+
+\subsection{Leer con \texttt{fread}}
+\begin{lstlisting}[style=c]
+/* Lee exactamente n floats de 'ruta' en un buffer nuevo; NULL si falla. */
+float *leer_f32(const char *ruta, size_t n) {
+    FILE *f = fopen(ruta, "rb");          /* "rb": binario, imprescindible en Windows */
+    if (!f) return NULL;
+    float *p = aligned_alloc_64(n * sizeof(float));
+    size_t leidos = fread(p, sizeof(float), n, f);
+    /* comprobar que no sobra nada: el tamaño del archivo debe ser n*4 */
+    int extra = fgetc(f);
+    fclose(f);
+    if (leidos != n || extra != EOF) { liberar_64(p); return NULL; }
+    return p;
+}
+\end{lstlisting}
+Y \cod{meta.txt} se lee línea a línea con \cod{fgets} + \cod{sscanf(linea, " \%63[\^{}= ] = \%255[\^{}\#\textbackslash n]", clave, valor)},
+ignorando las que empiezan por \cod{\#}.
+
+\begin{ojo}[Windows]
+\cod{aligned\_alloc} no existe en el runtime de MinGW: usa \cod{\_aligned\_malloc(n, 64)} / \cod{\_aligned\_free}
+(en \cod{<malloc.h>}). Escóndelo en dos funciones propias (\cod{aligned\_alloc\_64}, \cod{liberar\_64}) para no ensuciar
+el resto. Y abre siempre con \cod{"rb"}: en modo texto Windows traduce bytes \cod{0x1A} y \cod{\textbackslash r\textbackslash n}.
+\end{ojo}
+
+% =====================================================================
+\section{Los módulos en C}
+% =====================================================================
+
+\subsection{Estructuras}
+\begin{lstlisting}[style=c]
+typedef struct {
+    int N, d, d0, h1, relu_final;
+    float lambda_mmr;
+    float *V;            /* [N*d], normalizada, alineada a 64 */
+    float *W1, *b1;      /* [h1*d0], [h1] */
+    float *W2, *b2;      /* [d*h1],  [d]  */
+    int32_t *movie_ids;  /* [N] */
+} Modelo;
+
+typedef struct {         /* una bolsa: vista sobre un trozo de CSR */
+    const int32_t *idx; const float *w; int n;
+} Bolsa;
+\end{lstlisting}
+
+\subsection{\texttt{cargar\_modelo}}
+\begin{lstlisting}[style=c]
+int  cargar_modelo(const char *carpeta, Modelo *m);   /* 0 = ok; <0 = código de error */
+void liberar_modelo(Modelo *m);
+\end{lstlisting}
+\begin{enumerate}
+  \item Leer \cod{meta.txt}; comprobar \cod{version}, \cod{orden\_entrada} y que $d_0 = 2d + 3$.
+  \item \cod{leer\_f32} de \cod{V}, \cod{W1}, \cod{b1}, \cod{W2}, \cod{b2} con los tamaños del meta (si el tamaño del
+        archivo no cuadra, error: así se detecta un meta desactualizado).
+  \item Comprobación barata: la norma de unas cuantas filas de $V$ vale $1 \pm 10^{-3}$.
+\end{enumerate}
+
+\subsection{\texttt{media\_bolsa}}
+Es la traducción de \cod{media\_bolsa} de \cod{src/preprocesamiento/historial.py} para un solo usuario (sin la parte
+de \cod{excluir\_item}, que solo sirve al entrenar).
+\begin{lstlisting}[style=c]
+/* out[d] = sum w_j V[idx_j] / sum w_j. Devuelve 1 si la bolsa está vacía (out = 0). */
+int media_bolsa(const Modelo *m, Bolsa b, float *restrict out);
+\end{lstlisting}
+\begin{lstlisting}
+acum[0..d) = 0  (en double, como numpy)
+W = 0
+para j en 0..n-1:
+    fila = V + idx[j]*d
+    para c en 0..d-1: acum[c] += w[j] * fila[c]
+    W += w[j]
+si W <= 1e-9:  out = 0;  devolver 1        # bandera "vacía"
+out[c] = acum[c] / W;  devolver 0
+\end{lstlisting}
+\begin{ojo}[Bolsa vacía]
+Hay 951 usuarios con B vacía en dev, y un usuario de Letterboxd recién llegado puede tener todo vacío. Nunca dividas
+por cero: vector $\mathbf{0}$ y bandera a 1. El umbral $10^{-9}$ es el mismo de numpy (cubre pesos que suman 0).
+\end{ojo}
+
+\subsection{\texttt{mlp\_usuario}}
+\begin{lstlisting}[style=c]
+/* Construye x, aplica las dos capas y deja z[d] (sin normalizar). tmp: buffer de h1 floats. */
+void mlp_usuario(const Modelo *m, Bolsa A, Bolsa B, float *restrict z, float *restrict tmp);
+\end{lstlisting}
+\begin{lstlisting}
+x[0..d)    = media_bolsa(A) ;  fA = bandera
+x[d..2d)   = media_bolsa(B) ;  fB = bandera
+x[2d] = fA;  x[2d+1] = fB;  x[2d+2] = log1p(nA + nB)     # según orden_entrada del meta
+para o en 0..h1-1:  tmp[o] = max(0, b1[o] + sum_c W1[o*d0 + c] * x[c])
+para o en 0..d-1:   z[o]   = b2[o] + sum_c W2[o*h1 + c] * tmp[c]
+si relu_final: z = max(0, z)
+\end{lstlisting}
+Cada capa es un producto matriz-vector: escribe una función \cod{matvec(W, x, filas, cols, out)} y úsala aquí y en
+\cod{scores}.
+
+\subsection{\texttt{normalizar\_l2}}
+\begin{lstlisting}[style=c]
+void normalizar_l2(float *restrict v, int d);   /* v /= ||v||; si ||v|| < 1e-12, deja v igual */
+\end{lstlisting}
+PyTorch (\cod{F.normalize}) usa $\max(\lVert v\rVert, \varepsilon)$ con $\varepsilon = 10^{-12}$; imita eso.
+
+\subsection{\texttt{scores}}
+\begin{lstlisting}[style=c]
+/* s[i] = <V[i], u> para i = 0..N-1 */
+void scores(const float *restrict V, const float *restrict u, int N, int d, float *restrict s);
+\end{lstlisting}
+Dos bucles: el externo sobre $i$ (paralelizable), el interno sobre $c$ (vectorizable). Es el 90\,\% del tiempo.
+
+\subsection{\texttt{aplicar\_mascara}}
+\begin{lstlisting}[style=c]
+void aplicar_mascara(float *s, const int32_t *excl, int n_excl);  /* s[excl[j]] = -INFINITY */
+\end{lstlisting}
+Lo excluido es todo lo valorado en el historial (C14; en test, train+val por F8). Usa \cod{-INFINITY} de
+\cod{<math.h>}, igual que \cod{top\_k} de \cod{src/evaluacion/metricas.py}, y luego en \cod{top\_k} descarta los
+$-\infty$ para no devolverlos nunca.
+
+\subsection{\texttt{top\_k} con un min-heap}
+\begin{lstlisting}[style=c]
+typedef struct { float s; int32_t i; } Par;
+/* Escribe en out[] los k mejores (score descendente). Devuelve cuántos hay (<= k). */
+int top_k(const float *s, int N, int k, Par *out);
+\end{lstlisting}
+\begin{idea}[Por qué un heap]
+Ordenar los 23\,335 scores es $O(N\log N)$ y mueve mucha memoria. Basta con mantener los $k = 200$ mejores vistos
+hasta ahora en un \textbf{min-heap} (la raíz es el \emph{peor} de los 200): cada score nuevo se compara solo con la
+raíz; casi siempre pierde y cuesta una comparación. Coste $O(N\log k)$ en el peor caso y $\approx O(N)$ en la práctica.
+\end{idea}
+\begin{lstlisting}
+cnt = 0
+para i en 0..N-1:
+    si s[i] == -inf: continuar
+    si cnt < k:  heap[cnt++] = (s[i], i);  subir(heap, cnt-1)
+    si no, si mejor((s[i],i), heap[0]):  heap[0] = (s[i], i);  hundir(heap, cnt, 0)
+ordenar heap[0..cnt) de mayor a menor (qsort, son solo 200)
+devolver cnt
+\end{lstlisting}
+\cod{mejor(a, b)} es «\cod{a.s > b.s}, y si empatan, \cod{a.i < b.i}». Con este desempate el resultado es
+determinista y coincide con el criterio del índice menor de numpy dentro del trozo. Si quedan menos de $k$ películas
+sin excluir, se devuelven las que haya (\cod{cnt < k}): el que llama debe usar el valor devuelto, no $k$.
+
+\subsection{\texttt{mmr}}
+MMR (\emph{Maximal Marginal Relevance}) elige 20 de los 200 candidatos de forma voraz, equilibrando relevancia y
+diversidad. En cada paso, entre los candidatos $c$ aún no elegidos, toma
+\[
+c^\ast = \arg\max_{c \notin S}\ \Big[\ \lambda\, s_c \;-\; (1-\lambda)\,\max_{e\in S} \langle \mathbf{v}_c, \mathbf{v}_e\rangle \Big],
+\]
+donde $s_c = \langle\mathbf{u},\mathbf{v}_c\rangle$ y $S$ es lo ya elegido (en el primer paso el segundo término es 0,
+así que la primera es la más relevante). Como $V$ está normalizada, la similitud coseno es solo el producto escalar
+(E7). $\lambda = 0{,}7$ por defecto, como parámetro: $\lambda = 1$ reproduce el top-20 puro.
+\begin{ejemplo}[Tres candidatos y elegir 2]
+Con $\lambda = 0{,}7$.
+Scores: $s_A = 0{,}90$, $s_B = 0{,}88$, $s_C = 0{,}70$. Similitudes: $\langle A,B\rangle = 0{,}95$ (dos entregas de la
+misma saga), $\langle A,C\rangle = 0{,}10$.
+Paso 1: gana $A$ ($0{,}7\cdot0{,}90 = 0{,}63$). Paso 2: $B$ vale $0{,}7\cdot0{,}88 - 0{,}3\cdot0{,}95 = 0{,}331$;
+$C$ vale $0{,}7\cdot0{,}70 - 0{,}3\cdot0{,}10 = 0{,}460$. Gana $C$: se sacrifica algo de relevancia para no repetir saga.
+\end{ejemplo}
+\begin{lstlisting}[style=c]
+/* cand[nc] viene de top_k. Escribe en out[] hasta k_final índices de película. */
+int mmr(const Modelo *m, const Par *cand, int nc, int k_final, float lambda, int32_t *out);
+\end{lstlisting}
+\begin{lstlisting}
+maxsim[0..nc) = -inf ;  usado[0..nc) = 0
+para paso en 0..min(k_final,nc)-1:
+    mejor = -1
+    para c en 0..nc-1 no usado:
+        val = lambda*cand[c].s - (1-lambda)*(paso==0 ? 0 : maxsim[c])
+        si val > val_mejor: mejor = c
+    usado[mejor] = 1;  out[paso] = cand[mejor].i
+    para c no usado:  maxsim[c] = max(maxsim[c], <V[cand[c].i], V[cand[mejor].i]>)
+\end{lstlisting}
+El truco es actualizar \cod{maxsim} incrementalmente con el último elegido: coste $O(k_{\text{final}}\cdot nc\cdot d)
+= 20\cdot200\cdot128 \approx 0{,}5$\,M operaciones, nada.
+
+% =====================================================================
+\section{OpenMP y SIMD}
+% =====================================================================
+
+\subsection{Qué paralelizar}
+\begin{itemize}
+  \item \textbf{\texttt{scores}} sobre las $N$ películas:
+\begin{lstlisting}[style=c]
+#pragma omp parallel for schedule(static)
+for (int i = 0; i < N; i++) {
+    const float *restrict fila = V + (size_t)i * d;
+    float acc = 0.0f;
+    #pragma omp simd reduction(+:acc)
+    for (int c = 0; c < d; c++) acc += fila[c] * u[c];
+    s[i] = acc;
+}
+\end{lstlisting}
+  \item \textbf{top-k por hilos}: cada hilo hace su propio heap de $k$ sobre su trozo de $[0, N)$, y al final se
+        fusionan los $T$ heaps ($T\cdot k$ pares, p.\,ej.\ $12\cdot200$) con un último \cod{top\_k} secuencial. Aún mejor:
+        fusionar \cod{scores}+máscara+heap en el mismo bucle por hilo, para no volver a leer $s$.
+  \item \textbf{Lote de usuarios} (benchmarks, evaluación): paraleliza \emph{por usuario}
+        (\cod{\#pragma omp parallel for schedule(dynamic)}, porque las bolsas tienen tamaños muy distintos) y dentro de
+        cada usuario todo secuencial. Cada hilo necesita sus propios buffers (\cod{s}, \cod{tmp}, heap): resérvalos
+        dentro de la región paralela o un bloque por hilo con \cod{omp\_get\_thread\_num()}.
+\end{itemize}
+
+\begin{ojo}[Qué no paralelizar]
+MMR ($nc = 200$), el MLP ($\sim 100$\,k operaciones) y las medias de bolsa son demasiado pequeños: crear el equipo de
+hilos cuesta del orden de microsegundos y se come la ganancia. Y nunca anides dos \cod{parallel for} (por usuario y
+por película a la vez).
+\end{ojo}
+
+\subsection{SIMD sin intrínsecos}
+\begin{itemize}
+  \item Compila con \cod{-O3 -march=native}: gcc vectoriza solo el bucle interno con AVX2 (el i7-1355U no tiene
+        AVX-512). Compruébalo con \cod{-fopt-info-vec-optimized}.
+  \item \cod{restrict} en los punteros le promete a gcc que no se solapan; sin eso a veces no vectoriza.
+  \item Una suma en float no es asociativa: gcc no la reordena (y por tanto no la vectoriza) sin
+        \cod{\#pragma omp simd reduction} o \cod{-ffast-math}. Usa el pragma (necesita \cod{-fopenmp} o \cod{-fopenmp-simd}).
+  \item Alineación: $V$ reservada a 64 bytes; como $d = 128$ floats $= 512$ bytes, todas las filas quedan alineadas.
+        Puedes avisar a gcc con \cod{\_\_builtin\_assume\_aligned(V, 64)}.
+  \item Intrínsecos AVX2 a mano (\cod{\_mm256\_fmadd\_ps}) solo si al medir el automático se queda corto; es un buen
+        experimento opcional para la memoria.
+\end{itemize}
+
+\subsection{Compilar}
+Con el gcc 13.1 de Simply Fortran (no hace falta instalar nada):
+\begin{lstlisting}
+set PATH=C:\Program Files (x86)\Simply Fortran 3\mingw-w64\bin;%PATH%
+gcc -O3 -march=native -fopenmp -Wall -Wextra -Iinclude src\*.c tests\test_motor.c -o build\test_motor.exe -lm
+gcc -O3 -march=native -fopenmp -shared -Iinclude src\*.c -o build\motor.dll -lm
+\end{lstlisting}
+Para la \cod{.dll}, marca las funciones exportadas con \cod{\_\_declspec(dllexport)} (una macro \cod{MOTOR\_API} en
+\cod{motor.h}). La \cod{.dll} necesitará en tiempo de ejecución \cod{libgomp-1.dll} y compañía, que están en esa misma
+carpeta \cod{bin}: o la añades al \cod{PATH}, o en Python haces \cod{os.add\_dll\_directory(r"C:\textbackslash ...\textbackslash bin")}
+antes de cargarla. El número de hilos se controla con \cod{OMP\_NUM\_THREADS} o \cod{omp\_set\_num\_threads}.
+
+% =====================================================================
+\section{Validación}\label{sec:valid}
+% =====================================================================
+
+\subsection{Referencia numpy}
+Este script genera un modelo \emph{falso} con el contrato v0 y las salidas de referencia. Mientras no exista el
+modelo, es tu banco de pruebas; luego se cambia la parte aleatoria por la exportación real.
+\begin{lstlisting}[style=py]
+import numpy as np, pathlib
+rng = np.random.default_rng(0)
+N, d, h1 = 23335, 128, 256; d0 = 2*d + 3
+out = pathlib.Path("c/datos_prueba"); out.mkdir(parents=True, exist_ok=True)
+V = rng.standard_normal((N, d)).astype("<f4"); V /= np.linalg.norm(V, axis=1, keepdims=True)
+W1 = (rng.standard_normal((h1, d0)) / np.sqrt(d0)).astype("<f4"); b1 = np.zeros(h1, "<f4")
+W2 = (rng.standard_normal((d, h1)) / np.sqrt(h1)).astype("<f4");  b2 = np.zeros(d, "<f4")
+A_idx = rng.choice(N, 60, replace=False).astype("<i4"); A_w = rng.uniform(.2, 1, 60).astype("<f4")
+B_idx = rng.choice(N, 8, replace=False).astype("<i4");  B_w = np.ones(8, "<f4")
+excl = np.union1d(A_idx, B_idx).astype("<i4")
+
+def media(idx, w):
+    if w.sum() <= 1e-9: return np.zeros(d), 1.0
+    return (w[:, None].astype("f8") * V[idx]).sum(0) / w.sum(), 0.0
+a, fA = media(A_idx, A_w); b, fB = media(B_idx, B_w)
+x = np.concatenate([a, b, [fA, fB, np.log1p(len(A_idx) + len(B_idx))]]).astype("f4")
+z = W2 @ np.maximum(0, W1 @ x + b1) + b2
+u = z / max(np.linalg.norm(z), 1e-12)
+s = V @ u; s[excl] = -np.inf
+top = np.lexsort((np.arange(N), -s))[:200]          # score desc., empate -> índice menor
+
+for nom, arr in dict(V=V, W1=W1, b1=b1, W2=W2, b2=b2, usuario_A_idx=A_idx, usuario_A_w=A_w,
+                     usuario_B_idx=B_idx, usuario_B_w=B_w, usuario_excl=excl).items():
+    arr.tofile(out / f"{nom}.{'i32' if arr.dtype.kind == 'i' else 'f32'}")
+u.astype("<f4").tofile(out/"ref_u.f32"); s.astype("<f4").tofile(out/"ref_scores.f32")
+top.astype("<i4").tofile(out/"ref_top.i32")
+\end{lstlisting}
+(\cod{meta.txt} lo escribes a mano o con cuatro \cod{print}.)
+
+\subsection{Qué comparar}
+\begin{center}
+\begin{tabularx}{\linewidth}{lY}
+\toprule
+Salida & Criterio \\
+\midrule
+$\mathbf{u}$ & $\max_c |u^C_c - u^{np}_c| < 10^{-4}$ \\
+scores & $\max_i |s^C_i - s^{np}_i| < 10^{-4}$ sobre los no excluidos; los excluidos, $-\infty$ en los dos \\
+top-200 & mismo conjunto y mismo orden, salvo en empates: si difieren, los scores en esas posiciones deben coincidir dentro de $10^{-4}$ \\
+MMR & con $\lambda = 1$, igual al top-20; con $\lambda = 0{,}7$, igual a una versión numpy de diez líneas \\
+\bottomrule
+\end{tabularx}
+\end{center}
+\begin{idea}[Por qué no da exactamente igual]
+Con OpenMP y SIMD el orden de las sumas cambia, y en float32 eso mueve el último decimal. Por eso tolerancia $10^{-4}$
+y no igualdad. Si sale $10^{-2}$, no es redondeo: es un error (casi siempre el orden de la entrada o $W$ transpuesta).
+\end{idea}
+
+\subsection{Casos límite (un test cada uno)}
+\begin{enumerate}
+  \item \textbf{Bolsa B vacía}: $\bar{\mathbf{b}} = \mathbf{0}$, $f_B = 1$, sin NaN.
+  \item \textbf{Usuario sin historial} (A y B vacías): $\mathbf{x} = [\mathbf{0},\mathbf{0},1,1,0]$; $\mathbf{u}$ sale
+        de los sesgos; no debe haber NaN ni cuelgue (si $\mathbf{z} = \mathbf{0}$, \cod{normalizar\_l2} lo deja igual).
+  \item \textbf{$k$ mayor que las películas no excluidas}: con $N = 300$ y 150 excluidas, \cod{top\_k} con $k = 200$
+        devuelve 150 y ningún $-\infty$; MMR con $nc < 20$ devuelve $nc$.
+  \item \textbf{Archivo con tamaño erróneo}: \cod{cargar\_modelo} devuelve error, no lee basura.
+  \item \textbf{Empates}: scores todos iguales $\Rightarrow$ top-$k$ = los $k$ índices menores.
+  \item \textbf{Hilos}: el resultado con 1 y con 12 hilos es el mismo top-200.
+\end{enumerate}
+
+% =====================================================================
+\section{Benchmarks}
+% =====================================================================
+
+\subsection{Orden de magnitud antes de medir}
+$V\mathbf{u}$ son $23\,335\times128 \approx 3$\,M multiplicaciones-suma y leer $V$ entero: $23\,335\cdot128\cdot4 \approx
+12$\,MB (no cabe en la caché L3 de 12\,MB con holgura, así que manda la memoria). Con AVX2 a $\sim$GHz eso es del
+orden de \textbf{1\,ms en un hilo}, y con varios hilos se acercará al límite del ancho de banda de memoria
+($\sim$0,2--0,5\,ms). El resto (medias, MLP, heap, MMR) debería sumar $< 0{,}2$\,ms. Si mides 50\,ms, algo no vectoriza
+o hay una copia de más.
+
+\subsection{Qué medir}
+El PC de Arnau es un i7-1355U: 10 núcleos (2 de rendimiento + 8 eficientes) y 12 hilos. Mide con 1000 usuarios
+reales (o simulados) y da p50 y p95 de la latencia \emph{por usuario}:
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+Variante & p50 (ms) & p95 (ms) \\
+\midrule
+Python + numpy (la referencia de arriba) & & \\
+C, 1 hilo & & \\
+C, OpenMP 2 / 4 / 8 / 12 hilos & & \\
+C, lote de usuarios en paralelo (rendimiento: usuarios/s) & & \\
+\bottomrule
+\end{tabular}
+\end{center}
+y el \textbf{desglose por etapa} (medias, MLP, scores, máscara, top-k, MMR) con \cod{omp\_get\_wtime()} alrededor de
+cada una, acumulando en un array de tiempos. Repite cada medición varias veces y descarta las primeras (caché fría).
+Con núcleos híbridos, espera que de 2 a 4 hilos escale bien y de 8 a 12 mucho menos: es un resultado, no un fallo.
+
+\subsection{Llamar a la \texttt{.dll} desde Python}
+Lo más cómodo es exponer una función que reciba punteros a arrays numpy (sin que C lea archivos del usuario):
+\begin{lstlisting}[style=c]
+MOTOR_API int  motor_cargar(const char *carpeta);   /* guarda el Modelo en una variable global */
+MOTOR_API int  motor_recomendar(const int32_t *A_idx, const float *A_w, int nA,
+                                const int32_t *B_idx, const float *B_w, int nB,
+                                const int32_t *excl, int nE, int k_cand, int k_final,
+                                float lambda, int32_t *out, double *tiempos);
+\end{lstlisting}
+\begin{lstlisting}[style=py]
+import ctypes, os, numpy as np
+from numpy.ctypeslib import ndpointer
+os.add_dll_directory(r"C:\Program Files (x86)\Simply Fortran 3\mingw-w64\bin")  # libgomp
+lib = ctypes.CDLL(os.path.abspath("c/build/motor.dll"))
+i32 = ndpointer(np.int32, flags="C_CONTIGUOUS"); f32 = ndpointer(np.float32, flags="C_CONTIGUOUS")
+lib.motor_cargar.argtypes = [ctypes.c_char_p]
+lib.motor_recomendar.argtypes = [i32, f32, ctypes.c_int, i32, f32, ctypes.c_int, i32, ctypes.c_int,
+    ctypes.c_int, ctypes.c_int, ctypes.c_float, i32, ndpointer(np.float64, flags="C_CONTIGUOUS")]
+lib.motor_recomendar.restype = ctypes.c_int
+assert lib.motor_cargar(b"c/datos_prueba") == 0
+out = np.empty(20, np.int32); t = np.zeros(6)
+n = lib.motor_recomendar(A_idx, A_w, len(A_idx), B_idx, B_w, len(B_idx), excl, len(excl),
+                         200, 20, 0.7, out, t)
+\end{lstlisting}
+\begin{ojo}[ctypes]
+Si un array no es \cod{int32}/\cod{float32} contiguo, \cod{ndpointer} lanza un error (bien); sin \cod{argtypes},
+ctypes pasaría basura sin avisar. Para medir la latencia \emph{del motor} usa los tiempos que devuelve C; el tiempo
+medido desde Python incluye unos microsegundos de \cod{ctypes}, que también conviene reportar.
+\end{ojo}
+
+\subsection{Comparación con \texttt{hnswlib}}\label{sec:hnsw}
+En Python, sobre la misma $V$: \cod{hnswlib.Index(space="ip", dim=128)} (producto interno; con $V$ normalizada es el
+coseno), \cod{init\_index(max\_elements=N, M=16, ef\_construction=200)}, \cod{add\_items(V)} y
+\cod{knn\_query(u, k=200)} con \cod{ef} $\in \{200, 400, 800\}$. Mide:
+\begin{itemize}
+  \item latencia p50/p95 por consulta (y con \cod{set\_num\_threads(1)} para comparar con C de 1 hilo);
+  \item \textbf{recall@200 del ANN}: $|\text{HNSW}_{200} \cap \text{exacto}_{200}|/200$, frente al top-200 exacto (sin
+        máscara en los dos, porque \cod{hnswlib} no la aplica; o pidiendo $200 + n_E$ y filtrando);
+  \item tiempo de construcción del índice y memoria.
+\end{itemize}
+La conclusión esperada (H9): con $N = 23\,335$ HNSW es algo más rápido pero pierde recall, y el exacto ya cumple los
+5\,ms. HNSW compensaría con catálogos de millones.
+
+\subsection{Para la memoria (E2/E3)}
+Una gráfica de latencia frente a hilos (con la línea de 5\,ms), una tabla del desglose por etapa y la curva
+recall@200 frente a latencia de HNSW con el punto del exacto (recall 1).
+
+% =====================================================================
+\section{Estructura y orden de trabajo}
+% =====================================================================
+
+\subsection{Carpetas}
+\begin{lstlisting}
+c/
+  include/motor.h        # structs, firmas, MOTOR_API
+  src/io.c               # leer_f32, leer_i32, leer_meta, aligned_alloc_64
+  src/modelo.c           # cargar_modelo, liberar_modelo
+  src/usuario.c          # media_bolsa, matvec, mlp_usuario, normalizar_l2
+  src/busqueda.c         # scores, aplicar_mascara, top_k (+ versión OpenMP)
+  src/mmr.c
+  src/api.c              # motor_cargar, motor_recomendar (para ctypes)
+  tests/test_motor.c     # compara con ref_*.f32 y casos límite
+  python/generar_prueba.py  python/bench.py  python/bench_hnsw.py
+  build.bat              # las dos líneas de gcc
+  datos_prueba/          # generado, fuera de git
+  build/                 # fuera de git
+\end{lstlisting}
+
+\subsection{Pasos (cada uno se comprueba antes de seguir)}
+\begin{enumerate}
+  \item \cod{generar\_prueba.py} + \cod{io.c}: leer \cod{V.f32} y que la suma de la fila 0 coincida con numpy.
+  \item \cod{cargar\_modelo} con \cod{meta.txt}; test de archivo de tamaño erróneo.
+  \item \cod{media\_bolsa}: compara $\bar{\mathbf{a}}$ con numpy; test de bolsa vacía.
+  \item \cod{mlp\_usuario} + \cod{normalizar\_l2}: $\mathbf{u}$ dentro de $10^{-4}$.
+  \item \cod{scores} secuencial + máscara: scores dentro de $10^{-4}$.
+  \item \cod{top\_k} con heap: mismo top-200; tests de empates y de $k >$ disponibles.
+  \item \cod{mmr}: $\lambda = 1$ da el top-20; ejemplo de tres películas.
+  \item OpenMP en \cod{scores} y top-k por hilos: mismo resultado con 1 y 12 hilos.
+  \item \cod{api.c} + \cod{.dll} + \cod{ctypes}: mismo resultado que el ejecutable.
+  \item \cod{bench.py} (numpy vs C, hilos, desglose) y \cod{bench\_hnsw.py}.
+  \item Cuando exista el modelo: cambiar la parte aleatoria por la exportación real y cerrar el contrato v1.
+\end{enumerate}
+
+\begin{idea}[Lo que queda abierto]
+Del contrato son provisionales: $h_1$, las banderas exactas y el $n$ del logaritmo, \cod{relu\_final}, el orden de
+la entrada y los nombres de archivo. Lo estable: float32/int32/int64 little-endian row-major, $V$ normalizada
+$[N\times d]$, $d = 128$, la máscara C14/F8 y la salida (200 candidatos $\to$ 20 por MMR).
+\end{idea}
+
+\end{document}
