@@ -1,0 +1,31 @@
+{
+  "muestra": "dev",
+  "filas_entrada": 3154155,
+  "n_usuarios": 20085,
+  "n_peliculas": 23335,
+  "n_frios_elegidos": 2008,
+  "min_ratings_frio": 5,
+  "frios_con_ratings": 2008,
+  "frios_fuera_menos_de_min": 0,
+  "ratings_frios_fuera": 0,
+  "quitadas_d8_val": 402,
+  "quitadas_d8_test": 74,
+  "filas_train": 2545929,
+  "filas_val": 282176,
+  "filas_test": 65042,
+  "filas_dada": 260490,
+  "usuarios_frios_en_experimento": 2008,
+  "usuarios_frios_elegibles_test": 1980,
+  "usuarios_frios_elegibles_test_4": 1957,
+  "usuarios_normales_elegibles_val": 17330,
+  "mu_global_train": 3.5492075780589327,
+  "parametros": {
+    "frio": {
+      "frac_usuarios": 0.1,
+      "frac_historia": 0.8,
+      "min_ratings": 5
+    },
+    "semilla": 42
+  },
+  "segundos": 11.84
+}

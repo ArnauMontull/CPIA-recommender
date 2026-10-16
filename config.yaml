@@ -46,6 +46,7 @@ letterboxd:               # bloque G
 frio:                     # G6: experimento de arranque en frío de usuarios
   frac_usuarios: 0.10
   frac_historia: 0.80
+  min_ratings: 5          # fríos con menos ratings, fuera del experimento
 
 evaluacion:               # D6
   ks: [10, 20, 50, 200]
