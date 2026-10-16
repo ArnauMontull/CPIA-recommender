@@ -1,0 +1,51 @@
+# Parámetros del preprocesamiento (bloques C, D y E). Cada decisión de docs/decisiones_preprocesamiento.md
+# es un parámetro de aquí, no una constante escondida en el código (H7).
+
+muestras:
+  dev: ratings_dev_10pct.parquet     # en data/processed/
+  completo: ratings.parquet
+
+semilla: 42
+semillas_entrenamiento: [42, 43, 44, 45, 46]   # D10
+
+split:                    # bloque D
+  frac_val: 0.10          # D1/D4/D7: el 10 % penúltimo de cada usuario
+  frac_test: 0.10         # D1: el último 10 % de cada usuario (por fecha)
+  min_por_particion: 1    # cada usuario aporta al menos 1 rating a val y a test
+  desempate: movieId      # D2
+  quitar_frias_eval: true # D8: fuera de val/test las películas sin ratings en train
+  quitar_antes_estreno: true  # C11
+
+senal:                    # bloque C
+  tope_umbral: 4.0        # C2: positivo si r >= min(tope_umbral, media_u)
+  margen_nota_baja: 1.0   # C3: nota baja si r <= media_u - margen_nota_baja
+  peso_primer_dia: 0.75   # C9: primeras 24 h de cada usuario
+  segundos_primer_dia: 86400
+  umbral_fijo_eval: 4.0   # C7: segunda definición de relevante en val/test
+  suavizado_logq: 1.0     # C13: P(i) = (pos_i + s) / (total + s * N)
+
+features:                 # bloque E
+  modelo_texto: sentence-transformers/all-MiniLM-L6-v2   # E1, congelado (E8)
+  dtype_embeddings: float16
+  lote_texto: 256
+  n_actores: 5            # E2
+  min_peliculas_credito: 5   # E2: directores y actores con menos películas -> <OTRO>
+  keywords_en_texto: true    # E3: sinopsis + keywords -> MiniLM
+  generos: comunes16         # E5
+
+historial:                # bloque F
+  peso_neutra: 0.25       # F4: α de la zona neutra (ni positivo ni nota baja)
+  dim: 128                # F7: dimensión de u y v_i
+  capas_mlp: 2            # F7
+
+letterboxd:               # bloque G
+  min_notas_sin_encoger: 20   # G4
+  lambda_encogimiento: 10     # G4: media_u = (suma + lambda*mu) / (n + lambda)
+  carpeta: external/letterboxd  # dentro de data/ (fuera de git)
+
+frio:                     # G6: experimento de arranque en frío de usuarios
+  frac_usuarios: 0.10
+  frac_historia: 0.80
+
+evaluacion:               # D6
+  ks: [10, 20, 50, 200]

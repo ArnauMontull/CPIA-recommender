@@ -14,7 +14,7 @@ PROCESADOS = DATA / "processed"
 INFORMES = RAIZ / "reports"
 
 # Barra de progreso del LIFE OS de Arnau; si no existe (p. ej. en el PC de Uriel) no hace nada.
-_PROGRESO = RAIZ.parents[2] / "scripts" / "progreso.py"
+_PROGRESO = RAIZ.parents[3] / "scripts" / "progreso.py"
 _marcar = None
 if _PROGRESO.exists():
     _spec = importlib.util.spec_from_file_location("progreso", _PROGRESO)

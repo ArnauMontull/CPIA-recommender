@@ -1,0 +1,82 @@
+{
+ "n_peliculas": 23335,
+ "n_train": 21823,
+ "cobertura": {
+  "generos": 0.9976,
+  "director": 0.9903,
+  "reparto": 0.9788,
+  "anio": 0.9969,
+  "duracion": 0.9907,
+  "keywords": 0.8465,
+  "sinopsis": 0.9946,
+  "texto": 0.9946
+ },
+ "fuente": {
+  "generos": {
+   "movielens": 23052,
+   "tmdb": 228,
+   "falta": 55
+  },
+  "director": {
+   "kaggle": 19787,
+   "api": 3322,
+   "falta": 226
+  },
+  "reparto": {
+   "kaggle": 19533,
+   "api": 3307,
+   "falta": 495
+  },
+  "duracion": {
+   "kaggle": 19775,
+   "api": 3342,
+   "falta": 218
+  },
+  "keywords": {
+   "kaggle": 16643,
+   "api": 3111,
+   "falta": 3581
+  }
+ },
+ "vocabulario": {
+  "directores": 1241,
+  "actores": 4491,
+  "generos": 16,
+  "reservados": 3,
+  "min_peliculas_credito": 5
+ },
+ "anio_ge_2017": {
+  "director": {
+   "n": 3361,
+   "solo_kaggle": 0.0919,
+   "con_api": 0.9911
+  },
+  "reparto": {
+   "n": 3361,
+   "solo_kaggle": 0.0899,
+   "con_api": 0.9851
+  },
+  "duracion": {
+   "n": 3361,
+   "solo_kaggle": 0.0887,
+   "con_api": 0.9884
+  }
+ },
+ "estandarizacion": {
+  "anio": {
+   "media": 1996.7219796884335,
+   "desv": 21.462911881227843
+  },
+  "duracion": {
+   "media": 102.46779190751445,
+   "desv": 34.39488321742803
+  }
+ },
+ "embeddings": {
+  "forma": [
+   23335,
+   384
+  ],
+  "segundos": 822.3
+ }
+}

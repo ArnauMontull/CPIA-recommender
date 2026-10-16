@@ -1,0 +1,15 @@
+{
+  "muestra": "dev",
+  "filas_entrada": 3154155,
+  "quitadas_c11_antes_estreno": 42,
+  "quitadas_d8_val": 774,
+  "quitadas_d8_test": 1371,
+  "filas_train": 2523929,
+  "filas_val": 314318,
+  "filas_test": 313721,
+  "n_usuarios": 20085,
+  "n_peliculas": 23335,
+  "usuarios_solo_train": 0,
+  "usuarios_corte_en_empate_de_segundo": 4822,
+  "filas_primer_dia": 1972545
+}

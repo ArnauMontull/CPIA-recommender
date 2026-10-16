@@ -1,0 +1,27 @@
+{
+  "filas": 3151968,
+  "usuarios": 20085,
+  "parametros": {
+    "tope_umbral": 4.0,
+    "margen_nota_baja": 1.0,
+    "peso_primer_dia": 0.75,
+    "segundos_primer_dia": 86400,
+    "umbral_fijo_eval": 4.0,
+    "suavizado_logq": 1.0
+  },
+  "pct_positivo_train": 59.577,
+  "pct_nota_baja_train": 13.43,
+  "pct_relevante_4_train": 50.784,
+  "pct_positivo_val": 55.966,
+  "pct_nota_baja_val": 15.312,
+  "pct_relevante_4_val": 46.624,
+  "pct_positivo_test": 56.972,
+  "pct_nota_baja_test": 15.2,
+  "pct_relevante_4_test": 47.626,
+  "usuarios_elegible_val": 19232,
+  "usuarios_elegible_test": 19190,
+  "usuarios_elegible_val_4": 18799,
+  "usuarios_elegible_test_4": 18832,
+  "usuarios_sin_positivos_train": 0,
+  "n_items": 23335
+}

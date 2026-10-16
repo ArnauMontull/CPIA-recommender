@@ -1,0 +1,61 @@
+{
+  "usuarios": 20085,
+  "ejemplos_train": 1503681,
+  "tamano_bolsa_por_usuario": {
+    "train_A": {
+      "p50": 51.0,
+      "p90": 250.0,
+      "p99": 893.4799999999996,
+      "max": 3770,
+      "media": 108.786
+    },
+    "train_B": {
+      "p50": 7.0,
+      "p90": 39.0,
+      "p99": 163.0,
+      "max": 841,
+      "media": 16.876
+    },
+    "train_val_A": {
+      "p50": 57.0,
+      "p90": 281.0,
+      "p99": 997.1599999999999,
+      "max": 4237,
+      "media": 122.039
+    },
+    "train_val_B": {
+      "p50": 8.0,
+      "p90": 45.0,
+      "p99": 184.15999999999985,
+      "max": 944,
+      "media": 19.272
+    }
+  },
+  "usuarios_bolsa_B_vacia_train": 1105,
+  "usuarios_bolsa_B_vacia_train_val": 951,
+  "ejemplos_con_A_vacia_sin_objetivo": 0,
+  "memoria_bytes": {
+    "train_A": 17640472,
+    "train_B": 2872336,
+    "train_val_A": 19769992,
+    "train_val_B": 3257360
+  },
+  "memoria_bytes_total": 43540160,
+  "n_items": 23335,
+  "segundos": 0.81,
+  "parametros": {
+    "senal": {
+      "tope_umbral": 4.0,
+      "margen_nota_baja": 1.0,
+      "peso_primer_dia": 0.75,
+      "segundos_primer_dia": 86400,
+      "umbral_fijo_eval": 4.0,
+      "suavizado_logq": 1.0
+    },
+    "historial": {
+      "peso_neutra": 0.25,
+      "dim": 128,
+      "capas_mlp": 2
+    }
+  }
+}

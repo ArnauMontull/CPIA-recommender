@@ -1,0 +1,18 @@
+{
+ "Action": 0,
+ "Adventure": 1,
+ "Animation": 2,
+ "Comedy": 3,
+ "Crime": 4,
+ "Documentary": 5,
+ "Drama": 6,
+ "Fantasy": 7,
+ "Horror": 8,
+ "Mystery": 9,
+ "Romance": 10,
+ "Sci-Fi": 11,
+ "Thriller": 12,
+ "War": 13,
+ "Western": 14,
+ "Children": 15
+}
