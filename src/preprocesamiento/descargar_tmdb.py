@@ -38,7 +38,7 @@ SINOPSIS_VACIAS = {"", "no overview found.", "no overview", "no movie overview a
 def leer_credencial() -> str:
     if os.environ.get("TMDB_TOKEN"):
         return os.environ["TMDB_TOKEN"].strip()
-    for p in [RAIZ.parents[2] / "secrets" / "token tmdb.json", RAIZ.parents[2] / "secrets" / "tmdb.json",
+    for p in [RAIZ.parents[3] / "secrets" / "token tmdb.json", RAIZ.parents[3] / "secrets" / "tmdb.json",
               RAIZ / "secrets" / "tmdb.json"]:
         if p.exists():
             texto = p.read_text(encoding="utf-8-sig").strip()
