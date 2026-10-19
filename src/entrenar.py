@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import math
 import os
 import time
 from pathlib import Path
@@ -66,6 +67,14 @@ def evaluar_particion(modelo: DosTorres, ctx: Contexto, particion: int, ks, usua
     V = modelo.vectores_items()
     score = lambda filas: (vectores_usuarios_eval(modelo, ctx, V, filas, vista) @ V.T).cpu().numpy()
     return evaluar_por_lotes(score, usuarios, rel, elig, ks, d.pop_train, d.n_items, *d.valorados[vista], tam_lote=tam_lote)
+
+
+def lr_en(paso: int, total: int, lr: float, warmup: int, frac_final: float) -> float:
+    """Calentamiento lineal durante `warmup` pasos y luego decaimiento coseno hasta lr * frac_final en `total`."""
+    if warmup and paso < warmup:
+        return lr * (paso + 1) / warmup
+    t = min(1.0, (paso - warmup) / max(1, total - warmup))
+    return lr * (frac_final + (1.0 - frac_final) * 0.5 * (1.0 + math.cos(math.pi * t)))
 
 
 def _escribir(ruta: Path, objeto) -> None:
@@ -123,6 +132,8 @@ def entrenar(datos: Datos, cfg: dict, device: str, salida: Path, semilla: int | 
             V = modelo.vectores_items()
             U = modelo.vectores_usuarios(V, u, A, B, excluir_item=t, excluir_peso=w)
             perdida = perdida_softmax_logq(U, V[t], ctx.logq[t], tau, w, mascara_lote(u, t, ctx.valorados["train"]))
+            for g in opt.param_groups:                  # depende solo del paso global: se reanuda sin guardar nada más
+                g["lr"] = lr_en(estado["paso_global"], total, e["lr"], e["warmup_pasos"], e["lr_final_frac"])
             opt.zero_grad(set_to_none=True)
             perdida.backward()
             torch.nn.utils.clip_grad_norm_(modelo.parameters(), e["clip_grad"])

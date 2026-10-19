@@ -95,7 +95,7 @@ python -m src.entrenar --muestra dev --device cpu --salida modelos/          # ~
 python -m src.entrenar --muestra completo --device cuda --salida <Drive>/modelos   # Colab (docs/colab.md)
 ```
 
-Parámetros en `config.yaml` (`modelo:` y `entrenamiento:`); `--tau`, `--batch`, `--epocas`, `--semilla` los sobrescriben.
+Parámetros en `config.yaml` (`modelo:` y `entrenamiento:`, con calentamiento lineal y decaimiento coseno de la tasa de aprendizaje); `--tau`, `--batch`, `--epocas`, `--semilla` los sobrescriben.
 Reanuda solo si existe `ultimo.pt` en la carpeta de la ejecución.
 
 ## Tests

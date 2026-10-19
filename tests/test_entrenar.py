@@ -66,3 +66,13 @@ def test_evaluar_val_y_test_devuelven_metricas(datos):
     for particion in (1, 2):
         r = evaluar_particion(m, ctx, particion, [5, 10])
         assert 0.0 <= r["recall@10/pos"] <= 1.0 and 0.0 <= r["cobertura@10"] <= 1.0
+
+
+def test_calendario_de_lr():
+    from src.entrenar import lr_en
+    assert lr_en(0, 1000, 1e-3, 100, 0.05) == pytest.approx(1e-5)            # primer paso del calentamiento
+    assert lr_en(99, 1000, 1e-3, 100, 0.05) == pytest.approx(1e-3)           # fin del calentamiento
+    assert lr_en(550, 1000, 1e-3, 100, 0.05) == pytest.approx(1e-3 * (0.05 + 0.95 * 0.5))   # mitad del coseno
+    assert lr_en(1000, 1000, 1e-3, 100, 0.05) == pytest.approx(5e-5)         # final
+    assert lr_en(5000, 1000, 1e-3, 100, 0.05) == pytest.approx(5e-5)         # no baja de lr_final_frac
+    assert lr_en(3, 10, 1e-3, 0, 1.0) == pytest.approx(1e-3)                 # frac 1 y sin calentamiento: constante
