@@ -1,0 +1,82 @@
+"""Glosario del informe: cada métrica, variable y término técnico, definido tal como se usa en este proyecto.
+
+Lista de (grupo, término, definición). El informe LaTeX y el interactivo lo toman de aquí, así que hay una sola fuente.
+Las definiciones usan Unicode (τ, λ, ≥, ≈...); `informe_final.tex_gl` lo traduce a LaTeX.
+"""
+
+GLOSARIO: list[tuple[str, str, str]] = [
+    # ---------------------------------------------------------------- datos
+    ("Datos", "MovieLens 32M", "Conjunto público de valoraciones de películas (GroupLens): unos 32 millones de valoraciones de 0,5 a 5 estrellas de unos 200 000 usuarios. Es la fuente de las valoraciones."),
+    ("Datos", "TMDB", "The Movie Database: base de datos pública de películas. Aporta director, reparto, duración, palabras clave y sinopsis, que el modelo usa como «contenido» de cada película."),
+    ("Datos", "Letterboxd", "Red social de cine. Cada usuario puede exportar sus valoraciones (ratings.csv), películas vistas (watched.csv) y lista de pendientes (watchlist.csv). Se usa para la demo con perfiles reales."),
+    ("Datos", "Catálogo", "Las 23 335 películas que tienen al menos 20 valoraciones en MovieLens. Son las únicas que el modelo puede recomendar."),
+    ("Datos", "user_idx / item_idx", "Números enteros contiguos (0, 1, 2…) que identifican a cada usuario y a cada película dentro del código. Se usan en lugar de los identificadores originales (userId, movieId) porque indexan tablas y matrices."),
+    ("Datos", "movieId / tmdbId", "Identificador de una película en MovieLens / en TMDB. El catálogo guarda ambos, y el segundo permite emparejar películas de Letterboxd por la API de TMDB."),
+    ("Datos", "Partición (train / val / test)", "Reparto de las valoraciones de cada usuario por orden temporal: el 80 % más antiguo es train (entrenamiento), el 10 % siguiente val (validación, para decidir cuándo parar) y el último 10 % test (evaluación final, que nunca se usa para entrenar ni decidir)."),
+    ("Datos", "Reparto por usuario y tiempo", "Cada usuario se reparte por separado y por fecha, de modo que el modelo nunca aprende de valoraciones posteriores a las que se le piden predecir."),
+    ("Datos", "Usuario elegible", "Usuario con al menos un positivo en train y al menos una película relevante en la partición que se evalúa. Solo ellos cuentan en las métricas, para no promediar usuarios sin nada que acertar."),
+    ("Datos", "Submuestra de 20 000 usuarios", "Para ahorrar tiempo, las métricas se calculan con 20 000 usuarios elegibles elegidos al azar con una semilla fija; son los mismos para todos los métodos, de modo que la comparación es justa."),
+    ("Datos", "media_u", "Media de las valoraciones de entrenamiento de un usuario. Mide si puntúa alto o bajo en general y sirve para decidir qué le gusta (un 4 es «poco» para quien da muchos 5)."),
+    ("Datos", "Positivo (relevante «positivo»)", "Valoración r ≥ min(4, media_u): lo que se considera que le gusta al usuario. La definición alternativa del informe es «rating ≥ 4», un umbral fijo."),
+    ("Datos", "Nota baja", "Valoración r ≤ media_u − 1 que no es positiva. Se usa como señal de «no le gusta» (bolsa B)."),
+    ("Datos", "Zona neutra", "Valoraciones que no son ni positivas ni notas bajas. Entran en el historial con peso reducido (0,25)."),
+    ("Datos", "Peso de un ejemplo", "Importancia de un positivo de entrenamiento en la pérdida: (1 + max(0, r − media_u)) × 0,75 si es de las primeras 24 horas del usuario, sin el 0,75 si no. Premia las valoraciones muy por encima de la media del usuario."),
+    ("Datos", "Bolsa A / bolsa B", "Resumen del historial de un usuario como dos «bolsas» de películas con pesos: la A reúne sus positivos y neutras (lo que le gusta o no le disgusta) y la B sus notas bajas (lo que no le gusta). El orden dentro de la bolsa no importa."),
+    ("Datos", "Historial y vista train / train_val", "Películas que se le dan al modelo como entrada para describir a un usuario. En validación es solo lo de train; en test, train más validación (vista train_val), que es lo realista."),
+    ("Datos", "Máscara de valorados (C14)", "Conjunto de películas que el usuario ya ha valorado. Se excluyen siempre de las recomendaciones al evaluar, y en el entrenamiento se descartan como negativos."),
+    ("Datos", "Película fría", "Película sin valoraciones en train. El modelo no ha podido aprender su identificador, así que su vector sale solo de su contenido (director, reparto, sinopsis…)."),
+    ("Datos", "Usuario frío / arranque en frío", "Usuario que no estaba en el entrenamiento. Se le da una parte de su historia (80 %) y se mide si el modelo acierta lo que vio después (20 %). Comprueba que el modelo sirve para gente nueva sin reentrenar."),
+    ("Datos", "Watchlist", "Lista de películas que un usuario de Letterboxd marcó como «quiero ver». El modelo nunca la usa como entrada; se emplea para una evaluación sin etiquetas."),
+    ("Datos", "Emparejado exacto / por API", "Forma de reconocer una película de Letterboxd en el catálogo: por título y año normalizados (exacto) o, si falla, buscando en TMDB (API). El exacto no une títulos distintos de la misma película."),
+    # ---------------------------------------------------------------- modelo
+    ("Modelo", "Two-Tower (dos torres)", "Arquitectura de recomendación con dos redes: una convierte a cada película en un vector (torre de ítem) y otra a cada usuario en otro vector del mismo espacio (torre de usuario). La afinidad es el producto escalar de ambos."),
+    ("Modelo", "Vector / embedding", "Lista de números (aquí 128) que representa a una película o a un usuario. Películas o usuarios parecidos quedan cerca en ese espacio."),
+    ("Modelo", "d = 128", "Dimensión de los vectores de usuario y de película."),
+    ("Modelo", "Norma L2 / similitud coseno", "Los vectores se normalizan a longitud 1. Así el producto escalar es el coseno del ángulo entre ellos: 1 si apuntan igual, 0 si son perpendiculares. Es lo que mide cuánto encaja una película con un usuario."),
+    ("Modelo", "Score", "Número que el modelo asigna a un par usuario–película: el producto escalar de sus vectores. Más alto = mejor encaje. Las recomendaciones son las películas de score más alto."),
+    ("Modelo", "Torre de ítem", "Red que combina el contenido de la película (sinopsis, géneros, director, reparto, año, duración) y su identificador, y devuelve su vector."),
+    ("Modelo", "Torre de usuario", "Red que toma la media ponderada de los vectores de las películas de las bolsas A y B del usuario, junto con indicadores (si la bolsa está vacía, cuántas películas) y devuelve su vector."),
+    ("Modelo", "MiniLM (all-MiniLM-L6-v2)", "Modelo de lenguaje ya entrenado y congelado que convierte la sinopsis (más las palabras clave) en un vector de 384 números. No se reentrena."),
+    ("Modelo", "EmbeddingBag", "Capa que convierte una lista de identificadores (los directores o los actores de una película) en la media de sus vectores aprendidos."),
+    ("Modelo", "Dropout del ID (0,5)", "Durante el entrenamiento, en cada paso se anula con probabilidad 0,5 el identificador de cada película. Obliga al modelo a funcionar también solo con el contenido, necesario para películas sin valoraciones."),
+    ("Modelo", "MLP / capa oculta / ReLU", "MLP (perceptrón multicapa): red de capas lineales con una función no lineal entre ellas. Aquí, dos capas con 256 neuronas ocultas. ReLU: la función que pone a 0 los valores negativos."),
+    ("Modelo", "Pérdida contrastiva (softmax con negativos del lote)", "Función que el entrenamiento minimiza: para cada par usuario–película positivo, sube su score frente al de las demás películas del mismo lote, que actúan como ejemplos negativos."),
+    ("Modelo", "logQ (corrección del sesgo de muestreo)", "Se resta a cada score el logaritmo de la popularidad de la película (log P(i)). Corrige que las películas populares aparecen más como negativos del lote y evita que el modelo aprenda solo popularidad."),
+    ("Modelo", "Temperatura τ", "Parámetro que divide los scores antes del softmax. Con τ pequeña el modelo se concentra en separar lo mejor; con τ grande es más permisivo. Aquí τ = 0,05."),
+    ("Modelo", "Lote (batch) / paso / época", "Lote: grupo de ejemplos que se procesan a la vez (4 096). Paso: una actualización del modelo con un lote. Época: pasada por todos los ejemplos de entrenamiento (unos 3 700 pasos en el conjunto completo)."),
+    ("Modelo", "AdamW", "Algoritmo que ajusta los pesos del modelo para reducir la pérdida; Adam con regularización por decaimiento de pesos (weight decay 10⁻⁴)."),
+    ("Modelo", "Tasa de aprendizaje (lr), calentamiento y decaimiento coseno", "lr: cuánto se mueven los pesos en cada paso (10⁻³ como máximo). Calentamiento: sube linealmente durante los primeros 200 pasos. Decaimiento coseno: baja suavemente hasta el 5 % al final."),
+    ("Modelo", "Parada temprana (paciencia)", "Se evalúa en validación al final de cada época y se para si no mejora el Recall@200 durante 3 épocas seguidas. Evita sobreentrenar."),
+    ("Modelo", "Checkpoint (mejor.pt / ultimo.pt)", "Archivo con los pesos del modelo y el estado del entrenamiento. mejor.pt es la época con mejor resultado en validación; ultimo.pt permite reanudar si el entrenamiento se corta."),
+    ("Modelo", "Semilla", "Número que fija el azar del entrenamiento (inicialización de pesos y orden de los ejemplos). Cambiar de semilla mide cuánto depende el resultado de la suerte."),
+    # ---------------------------------------------------------------- baselines y métricas
+    ("Métodos de referencia", "Popularidad", "Método sin personalización: recomienda a todos los usuarios las películas con más positivos en train, excluyendo las ya valoradas. Es la referencia más básica."),
+    ("Métodos de referencia", "EASE", "«Embarrassingly Shallow Autoencoder» (Steck, 2019): modelo lineal sin red neuronal que aprende, con una fórmula cerrada, qué películas suelen valorarse juntas. Muy fuerte para su sencillez. Aquí con λ = 500 y sobre las 10 000 películas más populares."),
+    ("Métodos de referencia", "λ de EASE", "Regularización de EASE: cuanto mayor, más se suaviza lo aprendido. No confundir con λ del MMR."),
+    ("Métodos de referencia", "Azar", "Recomendar películas al azar entre las no valoradas. Marca el mínimo esperable."),
+    ("Métodos de referencia", "Oráculo", "Recomendador imaginario que conoce las respuestas. Su resultado es el techo posible y sirve para comprobar que la métrica está bien calculada."),
+    ("Métricas", "Top-k", "Las k películas con mejor score para un usuario, tras excluir las ya valoradas."),
+    ("Métricas", "Recall@k", "De las películas relevantes de un usuario en esa partición, la fracción que aparece en su top-k. Va de 0 a 1; se promedia entre usuarios. Responde a «¿cuánto de lo que le gustaría encuentro?»."),
+    ("Métricas", "NDCG@k", "Normalized Discounted Cumulative Gain: premia acertar y que el acierto esté arriba. Cada acierto en la posición p suma 1/log₂(p + 2); se divide por el máximo posible. De 0 a 1."),
+    ("Métricas", "Techo de recall", "Máximo Recall@k alcanzable: media de min(k, nº de relevantes) / nº de relevantes. Si un usuario tiene más de k relevantes, ni un modelo perfecto llega a 1."),
+    ("Métricas", "Cobertura@k", "Fracción del catálogo que aparece en el top-k de al menos un usuario evaluado. Cuanto mayor, más variedad global; una cobertura baja indica que se recomiendan siempre las mismas películas."),
+    ("Métricas", "Novedad@k", "Media de −log₂ p(i) de las películas recomendadas, con p(i) la popularidad suavizada en train. Valores altos = recomienda películas poco populares."),
+    ("Métricas", "Aciertos (hits@k), precisión@k, lift", "En la watchlist: aciertos = películas del top-k que están en ella; precisión = aciertos / k; lift = precisión dividida por la que tendría el azar (fracción de candidatos que están en la watchlist). Un lift de 30× es 30 veces mejor que el azar."),
+    ("Métricas", "MMR (relevancia marginal máxima) y λ", "Reordenación que, en cada paso, elige la película con mejor equilibrio entre relevancia y diferencia con lo ya elegido: λ · relevancia − (1 − λ) · similitud máxima. λ = 1 mantiene el ranking original; menor λ da más variedad. Aquí λ = 0,7."),
+    # ---------------------------------------------------------------- estadística
+    ("Estadística", "Media ± desviación típica", "Media de un resultado entre semillas y su desviación típica muestral (dividida por n − 1). Indica cuánto cambia el resultado al cambiar solo el azar del entrenamiento."),
+    ("Estadística", "Bootstrap de usuarios", "Técnica para medir la incertidumbre: se repite 2 000 veces el cálculo con usuarios remuestreados con reemplazo y se observa cuánto varía la diferencia entre dos métodos."),
+    ("Estadística", "Intervalo de confianza (IC) del 95 %", "Rango donde cae el 95 % de los remuestreos del bootstrap. Si el IC de una diferencia no contiene el 0, la diferencia no se explica por qué usuarios entraron en la muestra."),
+    ("Estadística", "Diferencia pareada", "Diferencia calculada usuario a usuario (el mismo usuario con los dos métodos) y luego promediada. Es más precisa que comparar medias sueltas."),
+    # ---------------------------------------------------------------- ingeniería
+    ("Ingeniería", "Fuga de datos (leakage)", "Error en el que el modelo usa, al entrenar o evaluar, información que no tendría en la práctica (por ejemplo, valoraciones posteriores a la que predice). Las comprobaciones del informe la descartan."),
+    ("Ingeniería", "Invariante", "Propiedad que debe cumplirse siempre (por ejemplo, «las medias de usuario salen solo de train»). Se comprueba automáticamente sobre los datos reales."),
+    ("Ingeniería", "Determinismo", "Dos ejecuciones con los mismos datos y el mismo modelo dan exactamente el mismo resultado."),
+    ("Ingeniería", "CSR", "Formato compacto de matriz dispersa: guarda solo los elementos no nulos y dónde empieza cada fila. Así se guardan los historiales de millones de usuarios."),
+    ("Ingeniería", "float32 / norma numérica", "Números decimales de 32 bits, los que usan el modelo y los ficheros exportados. Dos cálculos equivalentes pueden diferir en el último decimal (~10⁻⁶)."),
+    ("Ingeniería", "Latencia", "Tiempo de respuesta, en milisegundos (ms): lo que tarda en producir las recomendaciones para un usuario."),
+    ("Ingeniería", "Colab / GPU T4", "Entorno de Google donde se entrenó el modelo. La GPU T4 es la tarjeta gráfica gratuita que lo acelera: una época tarda unos 5,5 minutos."),
+    ("Ingeniería", "Coherencia numpy / PyTorch", "Comprobación de que el vector de usuario calculado con PyTorch y con la reimplementación en numpy (la que usa la exportación a C) coincide hasta ~10⁻⁶."),
+]
+
+GRUPOS = ["Datos", "Modelo", "Métodos de referencia", "Métricas", "Estadística", "Ingeniería"]

@@ -56,6 +56,7 @@ def main(argv=None) -> None:
     ap.add_argument("--muestra", default="completo")
     ap.add_argument("--sin-api", action="store_true")
     ap.add_argument("--etiqueta", default="s42")
+    ap.add_argument("--json", type=Path, default=None, help="guarda aquí solo los recuentos (sin títulos), p. ej. reports/watchlist_perfil1_s42.json")
     a = ap.parse_args(argv)
 
     cfg = yaml.safe_load((RAIZ / "config.yaml").read_text(encoding="utf-8"))
@@ -103,6 +104,9 @@ def main(argv=None) -> None:
         m, p = res["Two-Tower"], res["Popularidad"]
         lineas.append(f"| {k} | {m[f'hits@{k}']} | {m[f'precision@{k}']:.3f} | {m[f'recall@{k}']:.3f} | {m[f'lift@{k}']:.1f}× "
                       f"| {p[f'hits@{k}']} | {p[f'precision@{k}']:.3f} | {p[f'recall@{k}']:.3f} | {p[f'lift@{k}']:.1f}× |")
+    if a.json:
+        import json
+        a.json.write_text(json.dumps(res, indent=1), encoding="utf-8")
     salida = carpeta / f"watchlist_{a.etiqueta}.md"
     salida.write_text("\n".join(lineas) + "\n", encoding="utf-8")
     print("\n".join(lineas))

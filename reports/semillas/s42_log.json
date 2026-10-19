@@ -1,0 +1,62 @@
+[
+ {
+  "epoca": 1,
+  "perdida": 6.6937,
+  "recall@200/pos": 0.6461,
+  "segundos": 330.0
+ },
+ {
+  "epoca": 2,
+  "perdida": 6.3067,
+  "recall@200/pos": 0.6565,
+  "segundos": 660.0
+ },
+ {
+  "epoca": 3,
+  "perdida": 6.2238,
+  "recall@200/pos": 0.6621,
+  "segundos": 990.0
+ },
+ {
+  "epoca": 4,
+  "perdida": 6.1746,
+  "recall@200/pos": 0.6661,
+  "segundos": 1314.0
+ },
+ {
+  "epoca": 5,
+  "perdida": 6.1398,
+  "recall@200/pos": 0.6662,
+  "segundos": 1644.0
+ },
+ {
+  "epoca": 6,
+  "perdida": 6.113,
+  "recall@200/pos": 0.6673,
+  "segundos": 1974.0
+ },
+ {
+  "epoca": 7,
+  "perdida": 6.092,
+  "recall@200/pos": 0.67,
+  "segundos": 2304.0
+ },
+ {
+  "epoca": 8,
+  "perdida": 6.0756,
+  "recall@200/pos": 0.6702,
+  "segundos": 2628.0
+ },
+ {
+  "epoca": 9,
+  "perdida": 6.0637,
+  "recall@200/pos": 0.6715,
+  "segundos": 2958.0
+ },
+ {
+  "epoca": 10,
+  "perdida": 6.0567,
+  "recall@200/pos": 0.6708,
+  "segundos": 3288.0
+ }
+]

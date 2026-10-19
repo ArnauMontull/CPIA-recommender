@@ -240,3 +240,7 @@ database/
 # Checkpoints de entrenamiento (viven en Drive/disco, no en git)
 *.pt
 c/datos_modelo/
+# Resultados pesados o personales generados en local
+modelos_frio/
+modelos_lr/
+reports/semillas/*.pt
