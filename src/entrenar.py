@@ -174,7 +174,7 @@ def entrenar(datos: Datos, cfg: dict, device: str, salida: Path, semilla: int | 
 
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--muestra", choices=["dev", "completo"], required=True)
+    ap.add_argument("--muestra", required=True, help="carpeta de data/processed: dev, completo, dev_frio...")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--salida", type=Path, default=RAIZ / "modelos")
     ap.add_argument("--semilla", type=int)
