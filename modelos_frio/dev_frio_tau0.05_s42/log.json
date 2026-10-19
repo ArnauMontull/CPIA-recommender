@@ -98,5 +98,30 @@
   "cobertura@20": 0.09029,
   "cobertura@50": 0.1364,
   "cobertura@200": 0.28914
+ },
+ {
+  "epoca": 5,
+  "perdida": 5.381266833941142,
+  "segundos": 1482.2,
+  "recall@10/pos": 0.12898,
+  "ndcg@10/pos": 0.12169,
+  "recall@10/r4": 0.13336,
+  "ndcg@10/r4": 0.11894,
+  "recall@20/pos": 0.20342,
+  "ndcg@20/pos": 0.14328,
+  "recall@20/r4": 0.21022,
+  "ndcg@20/r4": 0.14229,
+  "recall@50/pos": 0.34202,
+  "ndcg@50/pos": 0.18546,
+  "recall@50/r4": 0.35092,
+  "ndcg@50/r4": 0.18551,
+  "recall@200/pos": 0.61442,
+  "ndcg@200/pos": 0.25846,
+  "recall@200/r4": 0.62391,
+  "ndcg@200/r4": 0.25709,
+  "cobertura@10": 0.06698,
+  "cobertura@20": 0.09158,
+  "cobertura@50": 0.13893,
+  "cobertura@200": 0.29046
  }
 ]

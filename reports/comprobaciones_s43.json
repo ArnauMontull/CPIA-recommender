@@ -1,0 +1,40 @@
+{
+ "comprobaciones": {
+  "finitud_y_normas": {
+   "ok": true,
+   "detalle": "V (23335, 128), U (3000, 128); |‖·‖-1| máx: V 1.8e-07, U 1.8e-07"
+  },
+  "determinismo": {
+   "ok": true,
+   "detalle": "dos evaluaciones idénticas (recall@200 = 0.6760)"
+  },
+  "exclusion_c14": {
+   "ok": true,
+   "detalle": "0 recomendaciones ya valoradas de 600000 (top-200, val y test)"
+  },
+  "metricas_azar_y_oraculo": {
+   "ok": true,
+   "detalle": "k=200: azar 0.0076 (≈ 0.0086); oráculo 0.9999 = techo 0.9999"
+  },
+  "numpy_igual_torch": {
+   "ok": true,
+   "detalle": "150 usuarios, diferencia máxima 2.3e-06"
+  },
+  "id_de_peliculas_frias": {
+   "ok": true,
+   "detalle": "6 películas frías, cambio máximo al perturbar el ID: 0.0e+00"
+  },
+  "invariancia_orden_historial": {
+   "ok": true,
+   "detalle": "bolsa de 32 películas permutada: diferencia 6.0e-08"
+  }
+ },
+ "latencia": {
+  "ms_por_usuario_solo": 1.69,
+  "ms_por_usuario_en_lote_512": 0.277,
+  "ms_torre_de_items_completa": 68.3
+ },
+ "todo_ok": true,
+ "checkpoint": "mejor.pt",
+ "muestra": "dev"
+}

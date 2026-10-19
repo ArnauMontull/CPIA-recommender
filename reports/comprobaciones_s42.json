@@ -30,9 +30,9 @@
   }
  },
  "latencia": {
-  "ms_por_usuario_solo": 3.63,
-  "ms_por_usuario_en_lote_512": 0.458,
-  "ms_torre_de_items_completa": 83.7
+  "ms_por_usuario_solo": 1.66,
+  "ms_por_usuario_en_lote_512": 0.247,
+  "ms_torre_de_items_completa": 60.3
  },
  "todo_ok": true,
  "checkpoint": "mejor.pt",

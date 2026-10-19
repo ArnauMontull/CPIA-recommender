@@ -1,7 +1,7 @@
 \section{Resumen}
-En test (relevante = positivo) el Two-Tower supera a EASE en 9 de 9 métricas, promediando 1 semilla(s).
+En test (relevante = positivo) el Two-Tower supera a EASE en 9 de 9 métricas, promediando 2 semilla(s).
 
-Recall@200: Two-Tower 0.6346, EASE 0.6030, popularidad 0.3332.
+Recall@200: Two-Tower 0.6352 $\pm$ 0.0008, EASE 0.6030, popularidad 0.3332.
 
 \section{Datos y protocolo}
 Recomendador de películas \emph{Two-Tower} entrenado con MovieLens~32M (200\,948 usuarios, 23\,335 películas, 31\,7~M de valoraciones) y
@@ -12,21 +12,21 @@ En ambas particiones se excluye del ranking todo lo ya valorado. Las métricas s
 Baselines: popularidad (lo más visto en train) y EASE (Steck, 2019, $\lambda=500$) sobre las 10\,000 películas más populares.
 
 \section{Resultados principales}
-El Two-Tower se ha entrenado con 1 semilla(s): 42. Cada celda del Two-Tower es la media $\pm$ desviación típica muestral entre semillas; en negrita el mejor método.
+El Two-Tower se ha entrenado con 2 semilla(s): 42, 43. Cada celda del Two-Tower es la media $\pm$ desviación típica muestral entre semillas; en negrita el mejor método.
 
 \begin{table}[H]\centering\small
 \begin{tabular}{lrrr}\toprule
 Métrica & Popularidad & EASE & Two-Tower (media $\pm$ desv.) \\\midrule
-Recall@10 & 0.0491 & 0.1149 & \textbf{0.1291} \\
-Recall@20 & 0.0839 & 0.1897 & \textbf{0.2074} \\
-Recall@50 & 0.1495 & 0.3297 & \textbf{0.3521} \\
-Recall@200 & 0.3332 & 0.6030 & \textbf{0.6346} \\
-NDCG@10 & 0.0497 & 0.1072 & \textbf{0.1231} \\
-NDCG@20 & 0.0598 & 0.1292 & \textbf{0.1451} \\
-NDCG@50 & 0.0796 & 0.1709 & \textbf{0.1885} \\
-NDCG@200 & 0.1273 & 0.2444 & \textbf{0.2643} \\
-Cobertura@20 & 0.0144 & 0.1634 & \textbf{0.2041} \\
-Novedad@20 & 8.3395 & 10.0466 & \textbf{10.1403} \\
+Recall@10 & 0.0491 & 0.1149 & \textbf{0.1287 $\pm$ 0.0006} \\
+Recall@20 & 0.0839 & 0.1897 & \textbf{0.2071 $\pm$ 0.0004} \\
+Recall@50 & 0.1495 & 0.3297 & \textbf{0.3529 $\pm$ 0.0011} \\
+Recall@200 & 0.3332 & 0.6030 & \textbf{0.6352 $\pm$ 0.0008} \\
+NDCG@10 & 0.0497 & 0.1072 & \textbf{0.1228 $\pm$ 0.0004} \\
+NDCG@20 & 0.0598 & 0.1292 & \textbf{0.1449 $\pm$ 0.0003} \\
+NDCG@50 & 0.0796 & 0.1709 & \textbf{0.1885 $\pm$ 0.0001} \\
+NDCG@200 & 0.1273 & 0.2444 & \textbf{0.2643 $\pm$ 0.0000} \\
+Cobertura@20 & 0.0144 & 0.1634 & \textbf{0.2026 $\pm$ 0.0021} \\
+Novedad@20 & 8.3395 & 10.0466 & \textbf{10.1316 $\pm$ 0.0123} \\
 \bottomrule\end{tabular}
 \caption{Test, relevante = positivo.}\label{tab:test_pos}
 \end{table}
@@ -34,16 +34,16 @@ Novedad@20 & 8.3395 & 10.0466 & \textbf{10.1403} \\
 \begin{table}[H]\centering\small
 \begin{tabular}{lrrr}\toprule
 Métrica & Popularidad & EASE & Two-Tower (media $\pm$ desv.) \\\midrule
-Recall@10 & 0.0510 & 0.1178 & \textbf{0.1338} \\
-Recall@20 & 0.0868 & 0.1935 & \textbf{0.2140} \\
-Recall@50 & 0.1541 & 0.3351 & \textbf{0.3604} \\
-Recall@200 & 0.3401 & 0.6080 & \textbf{0.6433} \\
-NDCG@10 & 0.0482 & 0.1037 & \textbf{0.1207} \\
-NDCG@20 & 0.0589 & 0.1267 & \textbf{0.1443} \\
-NDCG@50 & 0.0796 & 0.1692 & \textbf{0.1885} \\
-NDCG@200 & 0.1268 & 0.2410 & \textbf{0.2629} \\
-Cobertura@20 & 0.0144 & 0.1634 & \textbf{0.2041} \\
-Novedad@20 & 8.3395 & 10.0466 & \textbf{10.1403} \\
+Recall@10 & 0.0510 & 0.1178 & \textbf{0.1336 $\pm$ 0.0002} \\
+Recall@20 & 0.0868 & 0.1935 & \textbf{0.2137 $\pm$ 0.0005} \\
+Recall@50 & 0.1541 & 0.3351 & \textbf{0.3610 $\pm$ 0.0008} \\
+Recall@200 & 0.3401 & 0.6080 & \textbf{0.6441 $\pm$ 0.0011} \\
+NDCG@10 & 0.0482 & 0.1037 & \textbf{0.1205 $\pm$ 0.0004} \\
+NDCG@20 & 0.0589 & 0.1267 & \textbf{0.1441 $\pm$ 0.0004} \\
+NDCG@50 & 0.0796 & 0.1692 & \textbf{0.1885 $\pm$ 0.0000} \\
+NDCG@200 & 0.1268 & 0.2410 & \textbf{0.2630 $\pm$ 0.0001} \\
+Cobertura@20 & 0.0144 & 0.1634 & \textbf{0.2026 $\pm$ 0.0021} \\
+Novedad@20 & 8.3395 & 10.0466 & \textbf{10.1316 $\pm$ 0.0123} \\
 \bottomrule\end{tabular}
 \caption{Test, relevante = valoración $\geq 4$.}\label{tab:test_r4}
 \end{table}
@@ -51,23 +51,23 @@ Novedad@20 & 8.3395 & 10.0466 & \textbf{10.1403} \\
 \begin{figure}[H]\centering\begin{tikzpicture}\begin{axis}[ybar,width=0.9\linewidth,height=6.5cm,symbolic x coords={Recall@10,Recall@50,Recall@200,NDCG@20},xtick=data,ymin=0,bar width=9pt,legend pos=north west,legend style={font=\small},grid=major,ylabel={valor}]
 \addplot[fill=gray!70,draw=none] coordinates {(Recall@10,0.0491) (Recall@50,0.1495) (Recall@200,0.3332) (NDCG@20,0.0598)};\addlegendentry{Popularidad}
 \addplot[fill=orange!80,draw=none] coordinates {(Recall@10,0.1149) (Recall@50,0.3297) (Recall@200,0.6030) (NDCG@20,0.1292)};\addlegendentry{EASE}
-\addplot[fill=blue!70!black,draw=none] coordinates {(Recall@10,0.1291) (Recall@50,0.3521) (Recall@200,0.6346) (NDCG@20,0.1451)};\addlegendentry{Two-Tower}
+\addplot[fill=blue!70!black,draw=none] coordinates {(Recall@10,0.1287) (Recall@50,0.3529) (Recall@200,0.6352) (NDCG@20,0.1449)};\addlegendentry{Two-Tower}
 \end{axis}\end{tikzpicture}
 \caption{Test, relevante = positivo: tres métodos en las métricas principales.}\label{fig:barras}\end{figure}
 
 \begin{table}[H]\centering\small
 \begin{tabular}{lrrr}\toprule
 Métrica & Popularidad & EASE & Two-Tower (media $\pm$ desv.) \\\midrule
-Recall@10 & 0.0548 & 0.1193 & \textbf{0.1359} \\
-Recall@20 & 0.0936 & 0.2010 & \textbf{0.2225} \\
-Recall@50 & 0.1665 & 0.3539 & \textbf{0.3797} \\
-Recall@200 & 0.3561 & 0.6331 & \textbf{0.6715} \\
-NDCG@10 & 0.0518 & 0.1066 & \textbf{0.1228} \\
-NDCG@20 & 0.0638 & 0.1317 & \textbf{0.1492} \\
-NDCG@50 & 0.0862 & 0.1781 & \textbf{0.1971} \\
-NDCG@200 & 0.1355 & 0.2540 & \textbf{0.2763} \\
-Cobertura@20 & 0.0113 & 0.1597 & \textbf{0.1946} \\
-Novedad@20 & 8.3210 & 10.0078 & \textbf{10.0811} \\
+Recall@10 & 0.0548 & 0.1193 & \textbf{0.1366 $\pm$ 0.0011} \\
+Recall@20 & 0.0936 & 0.2010 & \textbf{0.2224 $\pm$ 0.0001} \\
+Recall@50 & 0.1665 & 0.3539 & \textbf{0.3806 $\pm$ 0.0013} \\
+Recall@200 & 0.3561 & 0.6331 & \textbf{0.6710 $\pm$ 0.0007} \\
+NDCG@10 & 0.0518 & 0.1066 & \textbf{0.1230 $\pm$ 0.0003} \\
+NDCG@20 & 0.0638 & 0.1317 & \textbf{0.1492 $\pm$ 0.0001} \\
+NDCG@50 & 0.0862 & 0.1781 & \textbf{0.1973 $\pm$ 0.0004} \\
+NDCG@200 & 0.1355 & 0.2540 & \textbf{0.2762 $\pm$ 0.0001} \\
+Cobertura@20 & 0.0113 & 0.1597 & \textbf{0.1932 $\pm$ 0.0019} \\
+Novedad@20 & 8.3210 & 10.0078 & \textbf{10.0726 $\pm$ 0.0120} \\
 \bottomrule\end{tabular}
 \caption{Validación, relevante = positivo.}\label{tab:val_pos}
 \end{table}
@@ -77,6 +77,7 @@ Novedad@20 & 8.3210 & 10.0078 & \textbf{10.0811} \\
 \begin{tabular}{lrrrr}\toprule
 Semilla & \texttt{Recall@10} & \texttt{Recall@200} & \texttt{NDCG@20} & \texttt{Cobertura@20} \\\midrule
 42 & 0.1291 & 0.6346 & 0.1451 & 0.2041 \\
+43 & 0.1283 & 0.6358 & 0.1447 & 0.2012 \\
 \bottomrule\end{tabular}
 \caption{Two-Tower por semilla en test (relevante = positivo).}\label{tab:semillas}
 \end{table}
@@ -85,6 +86,8 @@ Semilla & \texttt{Recall@10} & \texttt{Recall@200} & \texttt{NDCG@20} & \texttt{
 \begin{figure}[H]\centering\begin{tikzpicture}\begin{axis}[width=0.85\linewidth,height=6.5cm,xlabel={Época},ylabel={Recall@200 (validación)},grid=both,legend pos=south east,legend style={font=\small}]
 \addplot[color=blue!70!black,mark=*,mark size=1.2pt] coordinates {(1,0.6461) (2,0.6565) (3,0.6621) (4,0.6661) (5,0.6662) (6,0.6673) (7,0.67) (8,0.6702) (9,0.6715) (10,0.6708)};
 \addlegendentry{semilla 42}
+\addplot[color=red!70!black,mark=*,mark size=1.2pt] coordinates {(1,0.64437) (2,0.65503) (3,0.66199) (4,0.66445) (5,0.66808) (6,0.66839) (7,0.66983) (8,0.67037) (9,0.67093) (10,0.67069)};
+\addlegendentry{semilla 43}
 \end{axis}\end{tikzpicture}
 \caption{Recall@200 en validación por época, una curva por semilla.}\label{fig:curvas}\end{figure}
 
@@ -92,29 +95,53 @@ Semilla & \texttt{Recall@10} & \texttt{Recall@200} & \texttt{NDCG@20} & \texttt{
 No se ha calculado el bootstrap de usuarios en esta ejecución.
 
 \section{Arranque en frío de usuarios}
-El experimento de arranque en frío no se ha ejecutado en esta versión del informe.
+\begin{table}[H]\centering\small
+\begin{tabular}{lrrr}\toprule
+Métrica & Popularidad & EASE & Two-Tower \\\midrule
+Recall@10 & 0.0446 & 0.0988 & 0.0963 \\
+Recall@50 & 0.1517 & 0.3074 & 0.2811 \\
+Recall@200 & 0.3370 & 0.5682 & 0.5490 \\
+NDCG@20 & 0.0824 & 0.1568 & 0.1487 \\
+\bottomrule\end{tabular}
+\caption{Arranque en frío (10\,\% de usuarios fuera del entrenamiento; se les da el 80\,\% de su historia y se predice el 20\,\% final). Muestra \texttt{dev}.}\end{table}
 
 \section{Validación con la watchlist}
 La watchlist son películas que el usuario marcó como «quiero ver»; el modelo no la usa como entrada. Es una señal débil (intereses, no gustos) y tiende a contener clásicos populares, por eso se compara con popularidad. Se excluyen las ya vistas, y solo se cuentan las emparejadas con el catálogo.
-No se ha evaluado la watchlist en esta ejecución.
+\begin{table}[H]\centering\small
+\begin{tabular}{lrrrrr}\toprule
+Perfil / semilla & $k$ & Aciertos TT & Aciertos pop. & Lift TT & Lift pop. \\\midrule
+perfil1\_s42 & 10 & 9 & 5 & 43.0$\times$ & 23.9$\times$ \\
+perfil1\_s42 & 50 & 38 & 24 & 36.3$\times$ & 22.9$\times$ \\
+perfil1\_s42 & 200 & 107 & 69 & 25.6$\times$ & 16.5$\times$ \\
+perfil1\_s43 & 10 & 9 & 5 & 43.0$\times$ & 23.9$\times$ \\
+perfil1\_s43 & 50 & 38 & 24 & 36.3$\times$ & 22.9$\times$ \\
+perfil1\_s43 & 200 & 103 & 69 & 24.6$\times$ & 16.5$\times$ \\
+perfil2\_s42 & 10 & 0 & 1 & 0.0$\times$ & 27.2$\times$ \\
+perfil2\_s42 & 50 & 7 & 9 & 38.1$\times$ & 49.0$\times$ \\
+perfil2\_s42 & 200 & 26 & 23 & 35.4$\times$ & 31.3$\times$ \\
+perfil2\_s43 & 10 & 0 & 1 & 0.0$\times$ & 27.2$\times$ \\
+perfil2\_s43 & 50 & 7 & 9 & 38.1$\times$ & 49.0$\times$ \\
+perfil2\_s43 & 200 & 24 & 23 & 32.7$\times$ & 31.3$\times$ \\
+\bottomrule\end{tabular}
+\caption{Aciertos del top-$k$ en la watchlist del usuario (que el modelo nunca ve). Lift = precisión dividida por la tasa de aciertos del azar.}\end{table}
 
 \section{Comprobaciones y pruebas}
 
 \begin{table}[H]\centering\small
-\begin{tabular}{lc}\toprule
-Comprobación & s42 \\\midrule
-determinismo & OK \\
-exclusion c14 & OK \\
-finitud y normas & OK \\
-id de peliculas frias & OK \\
-invariancia orden historial & OK \\
-metricas azar y oraculo & OK \\
-numpy igual torch & OK \\
+\begin{tabular}{lcc}\toprule
+Comprobación & s42 & s43 \\\midrule
+determinismo & OK & OK \\
+exclusion c14 & OK & OK \\
+finitud y normas & OK & OK \\
+id de peliculas frias & OK & OK \\
+invariancia orden historial & OK & OK \\
+metricas azar y oraculo & OK & OK \\
+numpy igual torch & OK & OK \\
 \bottomrule\end{tabular}
 \caption{Comprobaciones sobre datos reales, por checkpoint.}\end{table}
 
 \subsection{Latencia de inferencia (CPU, Python)}
-Un usuario (torre de usuario, puntuar las 23\,335 películas y top-200 exacto): 3.63~ms. En lotes de 512: 0.458~ms por usuario. Calcular la torre de ítem completa: 83.7~ms (una vez por actualización del modelo).
+Un usuario (torre de usuario, puntuar las 23\,335 películas y top-200 exacto): 1.66~ms. En lotes de 512: 0.247~ms por usuario. Calcular la torre de ítem completa: 60.3~ms (una vez por actualización del modelo).
 
 \section{Limitaciones}
 \begin{itemize}

@@ -403,7 +403,7 @@ function barras(){const sec=$('selPart').value+': '+$('selDef').value,fam=$('sel
    r.onmousemove=ev=>showTip(ev,'<b>'+n+'</b> · '+m+'<br>'+f4(v)+(n=='Two-Tower'&&raw.sd!=null?' ± '+raw.sd.toFixed(4):''));r.onmouseleave=hideTip})});
  $('legM').innerHTML=names.map(n=>'<span><i style="background:'+COL[n]+'"></i>'+n+'</span>').join('');
  const rows=METRICAS.filter(m=>met(sec,m));let h='<tr><th>Métrica</th><th>Popularidad</th><th>EASE</th><th>Two-Tower</th></tr>';
- rows.forEach(m=>{const v=met(sec,m),tt=v['Two-Tower'];h+='<tr><td>'+m+'</td><td>'+f4(v['Popularidad'])+'</td><td>'+f4(v.EASE)+'</td><td><b>'+f4(tt.media)+'</b>'+(tt.sd!=null?' ± '+tt.sd.toFixed(4):'')+'</td></tr>'});$('tabM').innerHTML=h}
+ rows.forEach(m=>{const v=met(sec,m),tt=v['Two-Tower'],mx=Math.max(tt.media,v['Popularidad']==null?-1:v['Popularidad'],v.EASE==null?-1:v.EASE),B=(x,t)=>x!=null&&Math.abs(x-mx)<1e-12?'<b>'+t+'</b>':t;h+='<tr><td>'+m+'</td><td>'+B(v['Popularidad'],f4(v['Popularidad']))+'</td><td>'+B(v.EASE,f4(v.EASE))+'</td><td>'+B(tt.media,f4(tt.media))+(tt.sd!=null?' ± '+tt.sd.toFixed(4):'')+'</td></tr>'});$('tabM').innerHTML=h}
 const METRICAS=@@METRICAS@@;['selPart','selDef','selFam'].forEach(i=>$(i).onchange=barras);barras();
 // semillas
 $('selSem').innerHTML=METRICAS.filter(m=>met(TS,m)).map(m=>'<option>'+m+'</option>').join('');$('selSem').value='Recall@200';
@@ -436,7 +436,7 @@ $('selCur').onchange=cur;cur();
 // frio
 (function(){const f=D.frio;if(!f){$('frio').innerHTML='<span class="mut">No ejecutado en esta versión.</span>';return}const t=f.test||f;
  let h='<p class="mut">10 % de usuarios fuera del entrenamiento; se les da el 80 % de su historia y se predice el 20 % final (muestra dev).</p><div class="sc"><table><tr><th>Métrica</th><th>Popularidad</th><th>EASE</th><th>Two-Tower</th></tr>';
- [['Recall@10','recall@10/pos'],['Recall@50','recall@50/pos'],['Recall@200','recall@200/pos'],['NDCG@20','ndcg@20/pos']].forEach(([n,k])=>h+='<tr><td>'+n+'</td><td>'+f4((t.pop||{})[k])+'</td><td>'+f4((t.ease||{})[k])+'</td><td><b>'+f4((t.modelo||{})[k])+'</b></td></tr>');$('frio').innerHTML=h+'</table></div>'})();
+ [['Recall@10','recall@10/pos'],['Recall@50','recall@50/pos'],['Recall@200','recall@200/pos'],['NDCG@20','ndcg@20/pos']].forEach(([n,k])=>{const v=[(t.pop||{})[k],(t.ease||{})[k],(t.modelo||{})[k]],mx=Math.max(...v.filter(x=>x!=null)),c=v.map(x=>x!=null&&x===mx?'<b>'+f4(x)+'</b>':f4(x));h+='<tr><td>'+n+'</td><td>'+c[0]+'</td><td>'+c[1]+'</td><td>'+c[2]+'</td></tr>'});$('frio').innerHTML=h+'</table></div>'})();
 // watchlist
 (function(){const w=D.watchlist,ks=Object.keys(w||{});if(!ks.length){$('wl').innerHTML='<span class="mut">No evaluada.</span>';return}
  let h='<p class="mut">Aciertos del top-k en la watchlist del usuario (no se usa como entrada). Lift = precisión / tasa del azar.</p><div class="sc"><table><tr><th>Perfil / semilla</th><th>k</th><th>Aciertos Two-Tower</th><th>Aciertos popularidad</th><th>Lift TT</th><th>Lift pop.</th></tr>';

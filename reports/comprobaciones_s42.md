@@ -10,4 +10,4 @@
 | id_de_peliculas_frias | OK | 6 películas frías, cambio máximo al perturbar el ID: 0.0e+00 |
 | invariancia_orden_historial | OK | bolsa de 32 películas permutada: diferencia 1.0e-07 |
 
-Latencia (CPU): {'ms_por_usuario_solo': 3.63, 'ms_por_usuario_en_lote_512': 0.458, 'ms_torre_de_items_completa': 83.7}
+Latencia (CPU): {'ms_por_usuario_solo': 1.66, 'ms_por_usuario_en_lote_512': 0.247, 'ms_torre_de_items_completa': 60.3}
