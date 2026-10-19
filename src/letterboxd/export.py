@@ -66,3 +66,14 @@ def leer_export(origen: str | Path) -> pd.DataFrame:
     if ratings is None and diary is None:
         raise FileNotFoundError(f"{origen}: no hay ratings.csv ni diary.csv")
     return combinar(ratings, diary)
+
+
+def leer_vistas(origen: str | Path) -> pd.DataFrame | None:
+    """watched.csv (Date, Name, Year, Letterboxd URI): todo lo visto, con o sin nota. None si el export no lo trae.
+    Sirve solo para la exclusión (C14): una película vista sin nota no entra en las bolsas, pero no se recomienda."""
+    w = _leer_csv(Path(origen), "watched.csv")
+    if w is None or not len(w):
+        return None
+    out = w[["Name", "Year"]].copy()
+    out["Year"] = pd.to_numeric(out["Year"], errors="coerce").astype("Int16")
+    return out.drop_duplicates().reset_index(drop=True)

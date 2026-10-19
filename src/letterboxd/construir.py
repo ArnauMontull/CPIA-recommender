@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from .emparejar import Catalogo, emparejar
-from .export import leer_export
+from .export import leer_export, leer_vistas
 from .perfil import bolsas, media_encogida
 
 METODOS = ("exacto", "api", "sin_emparejar")
@@ -53,7 +53,20 @@ def guardar(carpeta: Path, emp: pd.DataFrame, bol: dict, meta: dict) -> None:
     (carpeta / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def anadir_vistas(bol: dict, meta: dict, vistas: pd.DataFrame | None, catalogo: Catalogo, buscar=None, hilos: int = 4) -> None:
+    """Une a `valorados` (la máscara C14) lo visto sin nota que está en el catálogo. Las bolsas A y B no cambian."""
+    if vistas is None:
+        return
+    e = emparejar(vistas, catalogo, buscar, hilos)
+    extra = e.loc[e.metodo != "sin_emparejar", "item_idx"].to_numpy().astype("int64")
+    unidos = np.union1d(bol["valorados"], extra).astype("int32")
+    meta["vistas_sin_nota_anadidas"] = int(len(unidos) - len(bol["valorados"]))
+    meta["tamano_bolsa"]["valorados"] = int(len(unidos))
+    bol["valorados"] = unidos
+
+
 def ejecutar(export, carpeta: Path, catalogo: Catalogo, n_items: int, mu: float, cfg: dict, buscar=None, hilos=4) -> dict:
     emp, bol, meta = construir(leer_export(export), catalogo, n_items, mu, cfg, buscar, hilos)
+    anadir_vistas(bol, meta, leer_vistas(export), catalogo, buscar, hilos)
     guardar(carpeta, emp, bol, meta)
     return meta

@@ -229,3 +229,20 @@ def test_cli_escribe_los_ficheros(tmp_path, monkeypatch):
     assert list(emp.columns) == ["Name", "Year", "Letterboxd URI", "rating", "fecha", "movieId", "item_idx", "metodo"]
     meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
     assert meta["n_por_metodo"] == {"exacto": 6, "api": 0, "sin_emparejar": 2}
+
+
+def test_vistas_sin_nota_se_excluyen_pero_no_entran_en_las_bolsas(tmp_path):
+    import shutil
+    from src.letterboxd.construir import anadir_vistas
+    from src.letterboxd.export import leer_vistas
+    shutil.copytree(SIM, tmp_path / "exp")
+    assert leer_vistas(tmp_path / "exp") is None                      # el export simulado no trae watched.csv
+    emp, bol, meta = construir(leer_export(tmp_path / "exp"), catalogo(), N_ITEMS, MU, CFG, api_simulada())
+    antes = list(bol["valorados"])
+    (tmp_path / "exp" / "watched.csv").write_text("Date,Name,Year,Letterboxd URI\n2024-01-01,The Matrix,1999,u\n2024-01-02,Inexistente,2001,u\n",
+                                                  encoding="utf-8")
+    vistas = leer_vistas(tmp_path / "exp")
+    A = list(bol["hist_A"][0])
+    anadir_vistas(bol, meta, vistas, catalogo())
+    assert list(bol["hist_A"][0]) == A                                # las bolsas no cambian
+    assert set(antes) <= set(bol["valorados"]) and meta["tamano_bolsa"]["valorados"] == len(bol["valorados"])
