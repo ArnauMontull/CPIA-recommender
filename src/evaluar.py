@@ -43,6 +43,7 @@ def main(argv=None) -> None:
     ap.add_argument("--sin-ease", action="store_true")
     ap.add_argument("--max-items-ease", type=int, default=10000)
     ap.add_argument("--lam-ease", type=float, default=500.0)
+    ap.add_argument("--etiqueta", default="", help="sufijo de los informes (p. ej. _s43), para no sobrescribir")
     ap.add_argument("--usuarios-max", type=int, default=0, help="submuestra de usuarios (0 = todos los elegibles)")
     a = ap.parse_args(argv)
 
@@ -70,9 +71,9 @@ def main(argv=None) -> None:
     for nombre in ("val", "test"):
         for d, titulo in (("pos", "positivo (C2)"), ("r4", "rating ≥ 4 (C7)")):
             md += ["", f"## {nombre.capitalize()}: relevante = {titulo}", "", tabla(salida[nombre], ks, d)]
-    ruta = INFORMES / f"resultados_{a.muestra}.md"
+    ruta = INFORMES / f"resultados_{a.muestra}{a.etiqueta}.md"
     ruta.write_text("\n".join(md) + "\n", encoding="utf-8")
-    (INFORMES / f"resultados_{a.muestra}.json").write_text(json.dumps(salida, indent=1), encoding="utf-8")
+    (INFORMES / f"resultados_{a.muestra}{a.etiqueta}.json").write_text(json.dumps(salida, indent=1), encoding="utf-8")
     print(f"Escrito {ruta}")
 
 

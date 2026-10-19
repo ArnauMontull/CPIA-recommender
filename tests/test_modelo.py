@@ -82,3 +82,17 @@ def test_gradiente_llega_a_la_torre_de_items_por_el_historial(datos):
     m.vectores_usuarios(V, torch.arange(6), A, B).sum().backward()
     assert m.items.texto_denso.weight.grad.abs().sum() > 0
     assert m.usuario.mlp[0].weight.grad.abs().sum() > 0
+
+
+def test_recomendar_usuario_nuevo_excluye_lo_valorado(datos):
+    from src.demo_letterboxd import recomendar_usuario
+    torch.manual_seed(0)
+    m = DosTorres.desde_config(datos.feats, sintetico.CFG).eval()
+    with torch.no_grad():
+        V = m.vectores_items()
+    A = (np.array([1, 4, 7], dtype="int32"), np.array([1.0, 2.0, 1.5], dtype="float32"))
+    B = (np.array([9], dtype="int32"), np.array([1.0], dtype="float32"))
+    excl = np.array([1, 4, 7, 9])
+    top, sc = recomendar_usuario(m, V, A, B, excl, k=10)
+    assert len(top) == 10 and not set(top.tolist()) & set(excl.tolist())
+    assert (np.diff(sc) <= 1e-9).all()                       # orden descendente
