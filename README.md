@@ -139,6 +139,7 @@ Gracias a la API de TMDB, el director de las películas de 2017 en adelante pasa
 | [`docs/plan_implementacion_CDE.md`](docs/plan_implementacion_CDE.md) | Contratos y reparto de la implementación de los bloques C, D, E y F |
 | [`docs/plan_antes_entrenamiento.md`](docs/plan_antes_entrenamiento.md) | Lo que queda antes de entrenar: pipeline completa, Letterboxd, frío y Colab |
 | [`docs/plan_entrenamiento.md`](docs/plan_entrenamiento.md) | Plan del entrenamiento del modelo Two-Tower |
+| [`docs/ideas.md`](docs/ideas.md) | Ideas fuera del alcance de E2/E3 (recomendar a una pareja o grupo, watchlist como señal...) |
 | [`docs/colab.md`](docs/colab.md) | Guía paso a paso para entrenar en Google Colab (GPU T4) |
 | [`docs/guia_H10_inferencia_C/`](docs/guia_H10_inferencia_C/) | Guía de la inferencia en C (búsqueda exacta, MMR, OpenMP) |
 | [`docs/guia_bloque_C/`](docs/guia_bloque_C/) | Guía del bloque C (señal objetivo) |
