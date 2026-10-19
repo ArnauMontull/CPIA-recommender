@@ -96,3 +96,14 @@ def test_recomendar_usuario_nuevo_excluye_lo_valorado(datos):
     top, sc = recomendar_usuario(m, V, A, B, excl, k=10)
     assert len(top) == 10 and not set(top.tolist()) & set(excl.tolist())
     assert (np.diff(sc) <= 1e-9).all()                       # orden descendente
+
+
+def test_mmr_lambda_1_conserva_el_ranking_y_lambda_baja_separa_gemelos():
+    from src.demo_letterboxd import mmr
+    V = torch.tensor([[1.0, 0.0], [0.999, 0.0447], [0.0, 1.0], [0.0, -1.0]])
+    V = V / V.norm(dim=1, keepdim=True)
+    cand, sc = np.array([0, 1, 2, 3]), np.array([0.9, 0.89, 0.6, 0.1])
+    assert mmr(V, cand, sc, 3, lam=1.0).tolist() == [0, 1, 2]        # sin diversidad: el orden por score
+    assert mmr(V, cand, sc, 3, lam=0.5).tolist() == [0, 2, 3]        # el gemelo casi idéntico del 0 queda fuera
+    # la normalización hace que lam importe aunque los scores estén muy juntos
+    assert mmr(V, cand, sc * 0.01, 3, lam=0.5).tolist() == mmr(V, cand, sc, 3, lam=0.5).tolist()

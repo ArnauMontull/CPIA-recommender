@@ -31,6 +31,23 @@ def recomendar_usuario(modelo: DosTorres, V: torch.Tensor, A: tuple, B: tuple, e
     return top, s[top]
 
 
+def mmr(V: torch.Tensor, candidatos: np.ndarray, scores: np.ndarray, k: int = 20, lam: float = 0.7) -> np.ndarray:
+    """Reordenación MMR (Carbonell y Goldstein): en cada paso, el candidato con mayor lam * score - (1 - lam) * (máxima
+    similitud coseno con lo ya elegido). V tiene filas de norma 1, así que la similitud es el producto escalar.
+    La relevancia se normaliza a [0, 1] entre los candidatos: los scores del modelo ocupan un rango estrecho (~0,1) y
+    las similitudes uno ancho, así que sin normalizar `lam` no equilibraría nada (la diversidad aplastaría al score).
+    lam = 1: el ranking original; lam menor: más diversidad. Devuelve k índices de película."""
+    C = V[torch.as_tensor(candidatos, dtype=torch.int64)].numpy()
+    rel = (scores - scores.min()) / max(float(scores.max() - scores.min()), 1e-12)
+    sim = C @ C.T
+    elegidos = [0]                                           # el primero es siempre el mejor
+    while len(elegidos) < min(k, len(candidatos)):
+        resto = np.setdiff1d(np.arange(len(candidatos)), elegidos)
+        valor = lam * rel[resto] - (1 - lam) * sim[np.ix_(resto, elegidos)].max(axis=1)
+        elegidos.append(int(resto[np.argmax(valor)]))
+    return np.asarray(candidatos)[elegidos]
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--alias", required=True)
@@ -38,6 +55,7 @@ def main(argv=None) -> None:
     ap.add_argument("--muestra", default="completo", help="carpeta de data/processed con las features (no cambia entre dev y completo)")
     ap.add_argument("--k", type=int, default=20)
     ap.add_argument("--etiqueta", default="")
+    ap.add_argument("--mmr", type=float, default=None, help="lambda del MMR (p. ej. 0.7); por defecto, el top-k sin reordenar")
     a = ap.parse_args(argv)
 
     cfg = yaml.safe_load((RAIZ / "config.yaml").read_text(encoding="utf-8"))
@@ -51,7 +69,11 @@ def main(argv=None) -> None:
     ld = lambda n: np.load(carpeta / n)
     A = (ld("hist_A_indices.npy"), ld("hist_A_pesos.npy"))
     B = (ld("hist_B_indices.npy"), ld("hist_B_pesos.npy"))
-    top, score = recomendar_usuario(modelo, V, A, B, ld("valorados_indices.npy"), a.k)
+    top, score = recomendar_usuario(modelo, V, A, B, ld("valorados_indices.npy"), 200 if a.mmr is not None else a.k)
+    if a.mmr is not None:                                    # MMR sobre los 200 mejores, como en el motor en C (H10)
+        elegidos = mmr(V, top, score, a.k, a.mmr)
+        score = score[[int(np.where(top == i)[0][0]) for i in elegidos]]
+        top = elegidos
 
     movies = pd.read_parquet(PROCESADOS / "movies.parquet", columns=["movieId", "titulo", "anio"])
     mapeo = pd.read_parquet(PROCESADOS / "dev" / "mapeo_peliculas.parquet").set_index("item_idx")
