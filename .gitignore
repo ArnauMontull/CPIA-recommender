@@ -236,3 +236,6 @@ database/
 *.blg
 # Datos sintéticos de los tests (pequeños, sin datos personales)
 !tests/datos/**/*.csv
+
+# Checkpoints de entrenamiento (viven en Drive/disco, no en git)
+*.pt
