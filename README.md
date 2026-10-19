@@ -26,7 +26,7 @@ Proyecto de CPIA (UPC, Ingeniería Física) de **Arnau Montull** y **Uriel Mart�
 
 **Pendiente**
 
-- ⏳ Entrenar el completo en Colab y barrer τ (el código está hecho: `src/modelo.py`, `src/perdida.py`, `src/entrenar.py`).
+- ✅ Entrenamiento en `completo` (Colab T4, 10 épocas, 55 min) y evaluación en test frente a popularidad y EASE: `reports/resultados_completo.md`.
 - ⏳ Inferencia en C (búsqueda exacta + MMR con OpenMP).
 - ⏳ Benchmarks (tiempo, escalado con hilos, calidad de las recomendaciones).
 
