@@ -14,9 +14,9 @@ PROCESADOS = DATA / "processed"
 INFORMES = RAIZ / "reports"
 
 # Barra de progreso del LIFE OS de Arnau; si no existe (p. ej. en el PC de Uriel) no hace nada.
-_PROGRESO = RAIZ.parents[3] / "scripts" / "progreso.py"
+_PROGRESO = RAIZ.parents[3] / "scripts" / "progreso.py" if len(RAIZ.parents) > 3 else None   # en Colab el repo está en /content
 _marcar = None
-if _PROGRESO.exists():
+if _PROGRESO is not None and _PROGRESO.exists():
     _spec = importlib.util.spec_from_file_location("progreso", _PROGRESO)
     _mod = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
