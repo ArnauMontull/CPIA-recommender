@@ -239,3 +239,4 @@ database/
 
 # Checkpoints de entrenamiento (viven en Drive/disco, no en git)
 *.pt
+c/datos_modelo/

@@ -1,0 +1,27 @@
+[
+ {
+  "epoca": 1,
+  "perdida": 6.678104632695516,
+  "segundos": 263.1,
+  "recall@10/pos": 0.07434,
+  "ndcg@10/pos": 0.07166,
+  "recall@10/r4": 0.07659,
+  "ndcg@10/r4": 0.06951,
+  "recall@20/pos": 0.12287,
+  "ndcg@20/pos": 0.08588,
+  "recall@20/r4": 0.12636,
+  "ndcg@20/r4": 0.08483,
+  "recall@50/pos": 0.22384,
+  "ndcg@50/pos": 0.1167,
+  "recall@50/r4": 0.22922,
+  "ndcg@50/r4": 0.11629,
+  "recall@200/pos": 0.46344,
+  "ndcg@200/pos": 0.17994,
+  "recall@200/r4": 0.47079,
+  "ndcg@200/r4": 0.17853,
+  "cobertura@10": 0.02961,
+  "cobertura@20": 0.04264,
+  "cobertura@50": 0.07401,
+  "cobertura@200": 0.1787
+ }
+]
