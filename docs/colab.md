@@ -20,7 +20,7 @@ token. La sección del token (paso 6) solo hace falta si algún día lo pasas a 
 ## 1. Crear la carpeta en Drive
 
 1. Abre <https://drive.google.com> con tu cuenta de Google.
-2. Botón **Nuevo** > **Carpeta nueva** > nombre exacto: `CPIA` > **Crear**. Debe quedar en «Mi unidad» (`MyDrive/CPIA`).
+2. Botón **Nuevo** > **Carpeta nueva** > nombre exacto: `CPIA_PROJECT` > **Crear**. Debe quedar en «Mi unidad» (`MyDrive/CPIA_PROJECT`).
 
 ## 2. Empaquetar los datos (en tu PC)
 
@@ -38,11 +38,11 @@ El script imprime el tamaño y el sha256. `dist/` está en `.gitignore`.
 
 ## 3. Subir el zip a Drive
 
-1. En Drive, entra en la carpeta `CPIA`.
+1. En Drive, entra en la carpeta `CPIA_PROJECT`.
 2. Arrastra `dist\datos_completo.zip` y `dist\datos_completo.sha256` a la ventana (o **Nuevo** > **Subida de archivos**).
 3. Espera a que termine la barra de subida (el zip completo puede ser de varios cientos de MB o más).
 
-Al final debes ver en `MyDrive/CPIA/`: `datos_completo.zip` y `datos_completo.sha256`.
+Al final debes ver en `MyDrive/CPIA_PROJECT/`: `datos_completo.zip` y `datos_completo.sha256`.
 
 ## 4. Abrir el notebook desde GitHub
 
@@ -82,7 +82,7 @@ La celda 1 del notebook lo comprueba: debe mostrar la tabla de `nvidia-smi` y `C
 5. Celda de entrenamiento: `python -m src.entrenar --muestra completo --device cuda --tau 0.05 --salida .../modelos`. Imprime una línea por
    época (pérdida y Recall@200 en val) y se para sola cuando val no mejora en 3 épocas seguidas. Para el barrido de τ (T1), repite con
    `--tau 0.02` y `--tau 0.1`: cada valor tiene su carpeta.
-6. Los checkpoints se escriben en `MyDrive/CPIA/modelos/`, así que sobreviven aunque la sesión muera.
+6. Los checkpoints se escriben en `MyDrive/CPIA_PROJECT/modelos/`, así que sobreviven aunque la sesión muera.
 
 ## 8. Límites del plan gratis
 
@@ -90,14 +90,14 @@ La celda 1 del notebook lo comprueba: debe mostrar la tabla de `nvidia-smi` y `C
   Puede cortarse sin avisar.
 - La GPU no está garantizada: a veces te desconectan si has usado mucha en los últimos días.
 - El disco de Colab (`/content`) **se borra** al terminar la sesión. Solo lo que esté en Drive sobrevive: por eso los checkpoints van a
-  `MyDrive/CPIA/modelos`.
+  `MyDrive/CPIA_PROJECT/modelos`.
 - Mantén la pestaña abierta y el portátil enchufado y sin suspender mientras entrena.
 
 ## 9. Si se corta la sesión
 
 1. Abre de nuevo el notebook (paso 4) y **Entorno de ejecución** > **Conectar**.
 2. Vuelve a ejecutar las celdas 1 a 6 (GPU, Drive, repo, dependencias, datos, tests): el disco estaba vacío, así que se repite todo.
-3. Revisa en Drive `MyDrive/CPIA/modelos/` qué checkpoints hay.
+3. Revisa en Drive `MyDrive/CPIA_PROJECT/modelos/` qué checkpoints hay.
 4. Ejecuta de nuevo la celda de entrenamiento con **los mismos parámetros** (muestra, τ, semilla): reanuda desde `ultimo.pt`
    de esa carpeta (se guarda cada 500 pasos y al acabar cada época; pierdes como mucho 500 pasos).
 5. Si no te dan GPU: espera unas horas, o entrena `dev` (`MUESTRA = "dev"`) para seguir avanzando.
@@ -106,7 +106,7 @@ La celda 1 del notebook lo comprueba: debe mostrar la tabla de `nvidia-smi` y `C
 
 | Síntoma | Causa y arreglo |
 |---|---|
-| `No encuentro .../datos_completo.zip` | Carpeta o nombre mal en Drive: debe ser `MyDrive/CPIA/datos_completo.zip`. |
+| `No encuentro .../datos_completo.zip` | Carpeta o nombre mal en Drive: debe ser `MyDrive/CPIA_PROJECT/datos_completo.zip`. |
 | `sha256 distinto` | El zip se subió incompleto: vuélvelo a subir. |
 | `git ha fallado` al clonar | Repo privado sin secreto `GITHUB_TOKEN` (paso 6), o secreto sin «Acceso desde el notebook». |
 | `CUDA disponible: False` | GPU sin activar (paso 5). Tras cambiarla, la sesión se reinicia: ejecuta desde la celda 1. |
