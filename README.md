@@ -22,10 +22,11 @@ Proyecto de CPIA (UPC, Ingeniería Física) de **Arnau Montull** y **Uriel Mart�
   features de películas, experimento de arranque en frío y perfiles de Letterboxd. Ejecutado en `dev` y en el conjunto `completo`.
 - ✅ Métricas de evaluación (`src/evaluacion/metricas.py`), con tests.
 - ✅ Notebook y guía de Colab (GPU T4) y empaquetado de datos para Drive.
+- ✅ Modelo Two-Tower, pérdida softmax con logQ + máscara C14 y bucle de entrenamiento con early stopping y reanudación, con tests.
 
 **Pendiente**
 
-- ⏳ Entrenamiento del modelo Two-Tower (`src/entrenar.py` aún no existe).
+- ⏳ Entrenar el completo en Colab y barrer τ (el código está hecho: `src/modelo.py`, `src/perdida.py`, `src/entrenar.py`).
 - ⏳ Inferencia en C (búsqueda exacta + MMR con OpenMP).
 - ⏳ Benchmarks (tiempo, escalado con hilos, calidad de las recomendaciones).
 
@@ -38,6 +39,7 @@ CPIA-recommender/
 ├── src/
 │   ├── preprocesamiento/        validar, descargar_tmdb, submuestra, split, senal, historial, features_peliculas, frio
 │   ├── letterboxd/              export de Letterboxd -> emparejado con el catálogo -> media_u y bolsas A/B
+│   ├── datos.py · modelo.py · perdida.py · entrenar.py   carga, torres, pérdida y entrenamiento
 │   ├── evaluacion/              métricas (Recall@K, NDCG@K, cobertura, novedad) sobre CSR, por lotes
 │   └── analisis/                estadísticas y análisis previos a las decisiones (submuestra, señal, split)
 ├── tests/                       pytest con datos sintéticos hechos a mano + invariantes de dev
@@ -85,6 +87,16 @@ Notas:
 - Si hiciste el paso 2, repite el 1 para incorporar lo descargado.
 - El paso 9 usa la API de TMDB para emparejar títulos que no coinciden de forma exacta; con `--sin-api` solo empareja por título y año.
 - Para entrenar en Colab: `python scripts/empaquetar_datos.py --muestra completo` y sigue [`docs/colab.md`](docs/colab.md).
+
+## Entrenar
+
+```
+python -m src.entrenar --muestra dev --device cpu --salida modelos/          # ~1 s/paso en CPU
+python -m src.entrenar --muestra completo --device cuda --salida <Drive>/modelos   # Colab (docs/colab.md)
+```
+
+Parámetros en `config.yaml` (`modelo:` y `entrenamiento:`); `--tau`, `--batch`, `--epocas`, `--semilla` los sobrescriben.
+Reanuda solo si existe `ultimo.pt` en la carpeta de la ejecución.
 
 ## Tests
 

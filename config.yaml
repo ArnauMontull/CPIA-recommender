@@ -50,3 +50,22 @@ frio:                     # G6: experimento de arranque en frío de usuarios
 
 evaluacion:               # D6
   ks: [10, 20, 50, 200]
+
+modelo:                   # bloques E y F (src/modelo.py); la dimensión d es historial.dim
+  oculta: 256             # T4: capa oculta de las dos torres (sin ReLU tras la última, va L2)
+  dim_texto: 128          # E8: capa densa entrenable sobre el MiniLM congelado (384)
+  dim_credito: 32         # EmbeddingBag de directores y de actores
+  dim_id: 32              # E6: embedding de movieId
+  dropout_id: 0.5         # T3: prob. de anular el embedding de movieId de una película en cada paso
+
+entrenamiento:            # src/entrenar.py (plan_entrenamiento.md, T1-T6)
+  tau: 0.05               # T1: temperatura de la softmax (barrido en val: 0.02, 0.05, 0.1)
+  batch: {cpu: 1024, cuda: 4096}   # T2: negativos del lote = batch - 1
+  lr: 0.001
+  weight_decay: 0.0001
+  clip_grad: 1.0
+  epocas: 10
+  paciencia: 3            # épocas seguidas sin mejorar la métrica de val
+  metrica_val: recall@200/pos   # T6: lo que recupera el top-200 antes del MMR
+  n_usuarios_val: 20000   # submuestra fija de usuarios elegibles para el early stopping
+  pasos_checkpoint: 500   # Colab se corta: ultimo.pt cada N pasos y se reanuda solo

@@ -79,8 +79,9 @@ La celda 1 del notebook lo comprueba: debe mostrar la tabla de `nvidia-smi` y `C
 2. **Entorno de ejecución** > **Ejecutar todas**, o celda a celda con Mayús+Intro (mejor la primera vez).
 3. Celda 2 (Drive): aparece una ventana pidiendo permiso. Acepta.
 4. Celda de tests: debe terminar en verde.
-5. Celda de entrenamiento: **`src/entrenar.py` aún no existe**. Hasta que se escriba (tras el preprocesamiento), esa celda da error;
-   las anteriores (GPU, repo, dependencias, datos, tests) sí sirven para dejar el entorno listo.
+5. Celda de entrenamiento: `python -m src.entrenar --muestra completo --device cuda --tau 0.05 --salida .../modelos`. Imprime una línea por
+   época (pérdida y Recall@200 en val) y se para sola cuando val no mejora en 3 épocas seguidas. Para el barrido de τ (T1), repite con
+   `--tau 0.02` y `--tau 0.1`: cada valor tiene su carpeta.
 6. Los checkpoints se escriben en `MyDrive/CPIA/modelos/`, así que sobreviven aunque la sesión muera.
 
 ## 8. Límites del plan gratis
@@ -97,8 +98,8 @@ La celda 1 del notebook lo comprueba: debe mostrar la tabla de `nvidia-smi` y `C
 1. Abre de nuevo el notebook (paso 4) y **Entorno de ejecución** > **Conectar**.
 2. Vuelve a ejecutar las celdas 1 a 6 (GPU, Drive, repo, dependencias, datos, tests): el disco estaba vacío, así que se repite todo.
 3. Revisa en Drive `MyDrive/CPIA/modelos/` qué checkpoints hay.
-4. Ejecuta de nuevo la celda de entrenamiento. Cuando `src.entrenar` exista, deberá reanudar desde el último checkpoint de esa carpeta
-   (requisito para quien lo escriba); si no reanuda, empezará de cero.
+4. Ejecuta de nuevo la celda de entrenamiento con **los mismos parámetros** (muestra, τ, semilla): reanuda desde `ultimo.pt`
+   de esa carpeta (se guarda cada 500 pasos y al acabar cada época; pierdes como mucho 500 pasos).
 5. Si no te dan GPU: espera unas horas, o entrena `dev` (`MUESTRA = "dev"`) para seguir avanzando.
 
 ## Problemas típicos
