@@ -245,8 +245,30 @@ def frases_resumen(datos: dict) -> list[str]:
         out.append(f"En test (relevante = positivo) el Two-Tower supera a EASE en {len(gana)} de {len(tot)} métricas, promediando {len(datos['semillas'])} semilla(s).")
         r = m.get("Recall@200")
         if r and "EASE" in r:
-            sd = f" $\\pm$ {r['Two-Tower']['sd']:.4f}" if r["Two-Tower"]["sd"] is not None else ""
+            sd = f" ± {r['Two-Tower']['sd']:.4f}" if r["Two-Tower"]["sd"] is not None else ""
             out.append(f"Recall@200: Two-Tower {r['Two-Tower']['media']:.4f}{sd}, EASE {r['EASE']:.4f}, popularidad {r['Popularidad']:.4f}.")
+    b = datos.get("bootstrap")
+    if b:
+        ee = {k: v for k, v in b["diferencias"].items() if k.startswith("Two-Tower − EASE")}
+        sig = [k for k, v in ee.items() if v["ic_inf"] > 0]
+        out.append(f"Bootstrap de usuarios (semilla 42): la diferencia Two-Tower − EASE es positiva con el IC del 95 % por encima de 0 en {len(sig)} de {len(ee)} comparaciones.")
+    f = datos.get("frio")
+    if f:
+        t = (f.get("test") or f)
+        mets = ("recall@10/pos", "recall@50/pos", "recall@200/pos", "ndcg@20/pos")
+        ease_gana = sum(1 for k in mets if t["ease"][k] > t["modelo"][k])
+        out.append(f"Arranque en frío (muestra dev, modelo pequeño de 5 épocas cortas): EASE supera al Two-Tower en {ease_gana} de {len(mets)} métricas; "
+                   "no es el resultado del conjunto completo y no confirma ventaja en frío.")
+    w = datos.get("watchlist") or {}
+    if w:
+        perfiles = sorted({k.split("_")[0] for k in w})
+        partes = []
+        for pf in perfiles:
+            ws = [v for k, v in w.items() if k.startswith(pf + "_")]
+            m50 = sum(1 for v in ws if v["Two-Tower"]["hits@50"] > v["Popularidad"]["hits@50"])
+            m200 = sum(1 for v in ws if v["Two-Tower"]["hits@200"] > v["Popularidad"]["hits@200"])
+            partes.append(f"{pf}: el Two-Tower acierta más que popularidad en el top-50 en {m50} de {len(ws)} semillas y en el top-200 en {m200} de {len(ws)}")
+        out.append("Watchlist (señal débil, solo dos perfiles) — " + "; ".join(partes) + ".")
     if datos["pruebas"]:
         p = datos["pruebas"]
         out.append(f"Suite de pruebas: {p['pasados']} pasadas, {p['saltados']} saltadas, {p['fallos']} fallos.")
@@ -278,7 +300,7 @@ PLANTILLA = r"""\documentclass[a4paper,11pt]{article}
 def cuerpo_tex(datos: dict) -> str:
     n = len(datos["semillas"])
     p = []
-    p.append("\\section{Resumen}\n" + "\n\n".join(frases_resumen(datos)) + "\n")
+    p.append("\\section{Resumen}\n" + "\n\n".join(tex(x) for x in frases_resumen(datos)) + "\n")
     p.append("""\\section{Datos y protocolo}
 Recomendador de películas \\emph{Two-Tower} entrenado con MovieLens~32M (200\\,948 usuarios, 23\\,335 películas, 31\\,7~M de valoraciones) y
 metadatos de TMDB. El reparto es \\textbf{por usuario y por tiempo}: el 80\\,\\% más antiguo de cada usuario es entrenamiento, el 10\\,\\% siguiente validación y el último 10\\,\\% test.
@@ -345,6 +367,7 @@ table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,t
 <h1>Recomendador Two-Tower: informe interactivo</h1>
 <div class="mut" id="sub"></div>
 <div class="tiles" id="tiles"></div>
+<div class="card" id="concl"></div>
 
 <h2>Comparación de métodos</h2>
 <div class="card"><div class="ctl">
@@ -388,6 +411,7 @@ const TS='Test: positivo (C2)',met=(s,m)=>(D.metodos[s]||{})[m];
   if(r.EASE!=null)t.push(['Recall@200 EASE',f4(r.EASE),'baseline fuerte, 10 000 películas']);t.push(['Recall@200 popularidad',f4(r['Popularidad']),'lo más visto en train'])}
  if(D.pruebas)t.push(['Pruebas automáticas',D.pruebas.pasados+' ok',D.pruebas.saltados+' saltadas · '+D.pruebas.fallos+' fallos']);
  $('tiles').innerHTML=t.map(x=>'<div class="card tile"><div class="l">'+x[0]+'</div><div class="n">'+x[1]+'</div><div class="l">'+x[2]+'</div></div>').join('')})();
+$('concl').innerHTML='<b>Conclusiones</b><ul style="margin:.4em 0 0 1.1em;padding:0">'+(D.frases||[]).map(x=>'<li>'+x+'</li>').join('')+'</ul>';
 // barras agrupadas
 function barras(){const sec=$('selPart').value+': '+$('selDef').value,fam=$('selFam').value,ks=[10,20,50,200];
  const ms=ks.map(k=>fam+'@'+k).filter(m=>met(sec,m));const svg=$('barras');svg.innerHTML='';
@@ -454,6 +478,7 @@ $('pie').textContent='Informe autogenerado por src/informe_final.py a partir de 
 
 
 def generar(datos: dict, salida: Path = SALIDA, compilar: bool = False) -> dict:
+    datos = {**datos, "frases": frases_resumen(datos)}
     salida.mkdir(parents=True, exist_ok=True)
     (salida / "datos.json").write_text(json.dumps(datos, indent=1, ensure_ascii=False), encoding="utf-8")
     (salida / "generado.tex").write_text(cuerpo_tex(datos), encoding="utf-8")

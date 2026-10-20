@@ -244,3 +244,4 @@ c/datos_modelo/
 modelos_frio/
 modelos_lr/
 reports/semillas/*.pt
+bootstrap_local.log
