@@ -1,0 +1,10 @@
+# Resultados con datos de personas: nunca se suben (escribir en data/analisis/)
+*.parquet
+*.npy
+*.log
+*.md
+!README.md
+*.html
+!dash_template.html
+*.json
+!nombres*.json
